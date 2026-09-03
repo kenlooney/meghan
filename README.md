@@ -12,6 +12,15 @@ At the begining it is not going to be much. It's going to start out as just a *t
 ```meg
 [meg source] -> [C code] -> [machine code]
 ```
+## What Meghan aims to become
+Meghan (meg) aims to become a compiler that uses it's own implemented backends such as:
+- Freestanding environments
+- Hosted environments such as:
+    - Windows
+    - Linux
+
+I will have a lot to learn before this. This is why first its going to be a *transpiler*.
+
 ## Licesning
 The compiler is going to be licensed under the Apache 2 license so after I get the initial version rolled out I will be releasing it to the public to also have the chance to contribute to it. 
 
