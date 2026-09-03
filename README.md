@@ -4,9 +4,9 @@ Meghan is a compiler-construction project written in C. The compiler is also
 referred to as `meg`.
 
 The project is at an early stage. It currently provides a C11 language library
-with source management, diagnostics, token definitions, and a lexer. The
-`meg` command-line program is a small executable foundation and currently
-supports only help and version information.
+with source management, diagnostics, token definitions, a lexer, an AST, a
+parser, and a semantic checker. The `meg` command-line program is a small
+executable foundation and currently supports only help and version information.
 
 ## Current Status
 
@@ -25,12 +25,16 @@ supports only help and version information.
   whitespace, and comments.
 - Decimal, hexadecimal (`0x`), and binary (`0b`) integer literals.
 - Line comments (`//`) and block comments (`/* ... */`).
+- Parsing `main` functions with blocks, declarations, returns, conditionals,
+  loops, and expressions.
+- An AST for integer and boolean values, names, unary and binary expressions,
+  and the supported statement forms.
+- Semantic checking for `i64` and `bool`, variable lookup, nested scopes,
+  assignments, conditions, operators, and guaranteed returns.
 - Automated tests for the project, source, lexer, and CLI foundation.
 
 ### Not Yet Supported
 
-- Parsing tokens into an abstract syntax tree.
-- Type checking or semantic analysis.
 - Transpiling Meghan source into C.
 - Generating machine code or object files.
 - Compiling a `.meg` source file from the command line.
@@ -41,7 +45,7 @@ supports only help and version information.
 The intended long-term pipeline is:
 
 ```text
-[Meghan source] -> [tokens] -> [parsed program] -> [C or native backend]
+[Meghan source] -> [tokens] -> [AST] -> [checked AST] -> [C or native backend]
 ```
 
 ## Quick Start
@@ -120,9 +124,9 @@ Integer literal examples include:
 0b101010
 ```
 
-These examples demonstrate lexer input only. They are not executable Meghan
-programs yet because parsing, type checking, and code generation are not
-implemented.
+These examples demonstrate the current lexer, parser, and checker input. They
+are not executable Meghan programs yet because the command-line compiler and
+code generation are not implemented.
 
 ## Using the Language Library
 
@@ -168,6 +172,27 @@ For example, an unterminated block comment produces an error associated with
 the comment's starting source span. An invalid integer literal produces an
 error token and increments `lexer.errors`.
 
+After parsing, a client can check the resulting program:
+
+```c
+#include <meglang/checker.h>
+#include <meglang/parser.h>
+
+ParseResult parsed = parse_source(&source, diagnostics);
+Checker checker;
+
+checker_init(&checker, diagnostics);
+if (parsed.errors != 0 || !checker_check(&checker, parsed.program))
+	return 1;
+
+checker_destroy(&checker);
+program_destroy(parsed.program);
+```
+
+The checker annotates expressions with their `ValueType` and resolves names to
+symbols. Always destroy the checker before destroying the program, because the
+checked AST stores references to the checker's symbols.
+
 ## Testing
 
 Run the tests after building:
@@ -197,6 +222,10 @@ The test suite currently includes:
 - `source_tests`: checks source ownership, spans, comparisons, and cleanup.
 - `lexer_tests`: checks keywords, identifiers, integers, comments, operators,
   positions, and end-of-file handling.
+- `ast_tests`: checks AST construction, printing, and cleanup.
+- `parser_tests`: checks function, statement, and expression parsing.
+- `checker_tests`: checks valid programs, symbol resolution, and semantic
+	errors.
 - `cli_help`: verifies the command-line help path.
 
 ## Developer Guide
@@ -215,10 +244,10 @@ The language library is compiled with warnings enabled (`/W4` on MSVC and
 `-Wall -Wextra -Wpedantic` on GCC). New behavior should normally include a
 focused test in `tests/` and be registered in `tests/CMakeLists.txt`.
 
-The next major implementation boundary is the parser: it will consume the
-tokens produced by `lexer_next` and create a representation of a Meghan
-program. Until then, changes should preserve the source-span and diagnostic
-information needed by later compiler stages.
+The next major implementation boundary is code generation: it will consume a
+checked AST and produce the first C output. Until then, changes should
+preserve the source-span, type, symbol, and diagnostic information needed by
+later compiler stages.
 
 ## License
 
