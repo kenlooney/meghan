@@ -2,9 +2,9 @@
 
 Meghan is a C11 compiler-construction project, also referred to as `meg`. It
 provides source management, diagnostics, lexing, parsing, semantic checking,
-and C code generation for the currently supported Meghan language forms. The
-`meg` command-line compiler reads a `.meg` source file and emits C code or a
-readable AST representation.
+and C and JavaScript code generation for the currently supported Meghan
+language forms. The `meg` command-line compiler reads a `.meg` source file and
+emits C code, JavaScript, or a readable AST representation.
 
 ## Current Status
 
@@ -24,14 +24,15 @@ readable AST representation.
 - Decimal, hexadecimal (`0x`), and binary (`0b`) integer literals.
 - Line comments (`//`) and block comments (`/* ... */`).
 - Parsing `main` functions with blocks, declarations, returns, conditionals,
-  loops, and expressions.
+  `while` and `for` loops, and expressions.
 - An AST for integer and boolean values, names, unary and binary expressions,
   and the supported statement forms.
 - Semantic checking for `i64` and `bool`, variable lookup, nested scopes,
-  assignments, conditions, operators, and guaranteed returns.
-- C code generation for the currently supported expressions and statements.
+	assignments, conditions, operators, loop scopes, and guaranteed returns.
+- C and JavaScript code generation for the currently supported expressions and
+	statements.
 - The `meg` command-line compiler, which reads a `.meg` source file and emits
-	C code or an AST representation.
+	C code, JavaScript, or an AST representation.
 - Automated tests for each pipeline stage, including code generation.
 
 ### Not Yet Supported
@@ -41,11 +42,14 @@ readable AST representation.
 - Invoking a C compiler to turn generated C into an executable.
 - Freestanding or native hosted backends.
 
-The intended long-term pipeline is:
+The current source-generation pipeline is:
 
 ```text
-[Meghan source] -> [tokens] -> [AST] -> [checked AST] -> [C code] -> [machine code]
+[Meghan source] -> [tokens] -> [AST] -> [checked AST] -> [C or JavaScript]
 ```
+
+C or JavaScript can then be passed to its respective toolchain to produce a
+running program. Native Meghan backends remain a long-term goal.
 
 ## Quick Start
 
@@ -97,11 +101,19 @@ The command also supports `--emit ast` for a readable AST representation:
 .\bin\Debug\meg.exe --input answer.meg --emit ast
 ```
 
+Use `--emit js` to generate JavaScript. The generated program uses `BigInt`
+for Meghan `i64` values and can be run with Node.js:
+
+```powershell
+.\bin\Debug\meg.exe --input answer.meg --emit js -o answer.js
+node answer.js
+```
+
 Use `--help` to print the command usage and `--version` to print the compiler
 version:
 
 ```text
-usage: meg -i <source.meg> [-o output] [--emit c|ast]
+usage: meg -i <source.meg> [-o output] [--emit c|js|ast]
 ```
 
 ## Meghan Source Examples
@@ -110,16 +122,18 @@ The lexer can recognize the current token vocabulary in source text such as:
 
 ```meg
 fn main() -> i64 {
-	let answer: i64 = 0x2a;
-	// The lexer skips this comment.
-	return answer;
+	let sum: i64 = 0;
+	for (let i: i64 = 0; i < 4; i = i + 1) {
+		sum = sum + i;
+	}
+	return sum;
 }
 ```
 
 The currently recognized keywords are:
 
 ```text
-fn let return if else while true false i64 bool
+fn let return if else while for true false i64 bool
 ```
 
 The lexer recognizes these operators and punctuation:
@@ -137,9 +151,9 @@ Integer literal examples include:
 0b101010
 ```
 
-These examples demonstrate the current lexer, parser, checker, and C code
-generator input. The compiler currently emits C source; use a C compiler to
-produce an executable.
+These examples demonstrate the current lexer, parser, checker, and source
+generators. Use a C compiler for generated C or Node.js for generated
+JavaScript to produce a running program.
 
 ## Using the Language Library
 
@@ -211,6 +225,19 @@ symbols. Always destroy the checker before destroying the program, because the
 checked AST stores references to the checker's symbols. `codegen_c` expects a
 successfully checked program and writes C source to the supplied `FILE`.
 
+JavaScript output uses the same checked AST and is available through the
+parallel API:
+
+```c
+#include <meglang/codegen_js.h>
+
+if (!codegen_js(stdout, parsed.program, diagnostics))
+	return 1;
+```
+
+`codegen_js` writes JavaScript using `BigInt` for `i64` values and preserves
+the checked symbol IDs and integer-operation checks used by the C backend.
+
 ## Testing
 
 Run the tests after building:
@@ -246,6 +273,8 @@ The test suite currently includes:
 	errors.
 - `pipeline_tests`: checks parsing, semantic checking, and C generation in
   sequence.
+- `for_loops`: checks valid and invalid `for` loop parsing, checking, and
+	scoping.
 - `cli_help`: verifies the command-line help path.
 
 ## Developer Guide
@@ -264,10 +293,10 @@ The language library is compiled with warnings enabled (`/W4` on MSVC and
 `-Wall -Wextra -Wpedantic` on GCC). New behavior should normally include a
 focused test in `tests/` and be registered in `tests/CMakeLists.txt`.
 
-The C generator consumes a checked AST and emits `int64_t` and `bool` C code
-for the currently supported Meghan program forms. It uses internal symbol IDs
-for generated variable names and helper functions that abort on invalid signed
-division or remainder. Future work includes invoking a C compiler and adding
+The C and JavaScript generators consume a checked AST and emit the currently
+supported Meghan program forms. They use internal symbol IDs for generated
+variable names and helper functions that reject invalid signed division or
+remainder. Future work includes invoking target-language compilers and adding
 native backends while preserving source-span, type, symbol, and diagnostic
 information.
 
