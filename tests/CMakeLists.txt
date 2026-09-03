@@ -12,5 +12,6 @@ endfunction()
 
 add_meg_test(smoke)
 add_meg_test(source_tests)
+add_meg_test(lexer_tests)
 add_test(NAME cli_help COMMAND meg --help)
 
