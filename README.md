@@ -1,4 +1,8 @@
 # The Meghan Compiler
+### Build Status
+The compiler currently builds and runs on:
+- Windows
+- Ubuntu
 
 ### Running the tests
 On Windows
