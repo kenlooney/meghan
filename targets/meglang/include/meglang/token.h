@@ -28,6 +28,7 @@ typedef enum TokenKind {
     TOKEN_IF,
     TOKEN_ELSE,
     TOKEN_WHILE,
+    TOKEN_FOR,
     TOKEN_TRUE,
     TOKEN_FALSE,
     TOKEN_I64,

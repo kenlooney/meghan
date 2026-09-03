@@ -308,6 +308,25 @@ static Statement *parse_statement(Parser *parser)
         statement->as.loop.body = parse_block(parser);
         return statement;
     }
+    if (start.kind == TOKEN_FOR)
+    {
+        Token end;
+        advance(parser);
+        statement = new_statement(STMT_FOR, start.span);
+        expect(parser, TOKEN_LPAREN, "expected '(' after 'for'");
+        if (parser->current.kind != TOKEN_LET)
+            error_at(parser, parser->current.span, "expected 'let' in for initializer");
+        statement->as.iteration.initializer = parse_statement(parser);
+        statement->as.iteration.condition = parse_expression(parser, 1);
+        expect(parser, TOKEN_SEMICOLON, "expected ';' after for condition");
+        statement->as.iteration.step = parse_expression(parser, 1);
+        expect(parser, TOKEN_RPAREN, "expected ')' after for clauses");
+        statement->as.iteration.body = parse_block(parser);
+        end = (Token){TOKEN_RBRACE, statement->as.iteration.body->span};
+        statement->span = joined(start.span, end.span);
+        return statement;
+    }
+
     if (start.kind == TOKEN_LBRACE)
         return parse_block(parser);
     statement = new_statement(STMT_EXPR, start.span);
