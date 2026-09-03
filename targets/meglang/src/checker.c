@@ -137,6 +137,22 @@ static ValueType written_type(SourceSpan span)
 }
 
 static void check_statements(Checker *checker, Statement *statement);
+static void check_block(Checker *checker, Statement *block);
+
+static void check_for(Checker *checker, Statement *statement)
+{
+    Scope loop_scope = {checker->scope, NULL};
+    ValueType condition;
+    checker->scope = &loop_scope;
+    check_statements(checker, statement->as.iteration.initializer);
+    condition = check_expr(checker, statement->as.iteration.condition, false);
+    if (condition != TYPE_ERROR && condition != TYPE_BOOL)
+        report(checker, statement->as.iteration.condition->span,
+               "for condition must be bool");
+    (void)check_expr(checker, statement->as.iteration.step, true);
+    check_block(checker, statement->as.iteration.body);
+    checker->scope = loop_scope.parent;
+}
 
 static void check_block(Checker *checker, Statement *block)
 {
@@ -165,6 +181,7 @@ static void check_statements(Checker *checker, Statement *statement)
             break;
         case STMT_EXPR: (void)check_expr(checker, statement->as.expression, true); break;
         case STMT_BLOCK: check_block(checker, statement); break;
+        case STMT_FOR: check_for(checker, statement); break;
         case STMT_IF:
             got = check_expr(checker, statement->as.branch.condition, false);
             if (got != TYPE_ERROR && got != TYPE_BOOL) report(checker, statement->as.branch.condition->span, "if condition must be bool");

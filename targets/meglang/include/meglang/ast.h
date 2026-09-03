@@ -60,7 +60,8 @@ typedef enum StatementKind {
     STMT_EXPR,
     STMT_BLOCK,
     STMT_IF,
-    STMT_WHILE
+    STMT_WHILE,
+    STMT_FOR
 } StatementKind;
 
 struct Statement {
@@ -73,6 +74,12 @@ struct Statement {
         struct { Statement *items; } block;
         struct { Expr *condition; Statement *then_branch; Statement *else_branch; } branch;
         struct { Expr *condition; Statement *body; } loop;
+        struct {
+            Statement *initializer;
+            Expr *condition;
+            Expr *step;
+            Statement *body;
+        } iteration;
     } as;
 };
 

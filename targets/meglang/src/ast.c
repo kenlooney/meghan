@@ -18,9 +18,12 @@
 
 static void expr_destroy(Expr *expr)
 {
-    if(!expr) return;
-    if(expr->kind == EXPR_UNARY) expr_destroy(expr->as.unary.operand);
-    if(expr->kind == EXPR_BINARY) {
+    if (!expr)
+        return;
+    if (expr->kind == EXPR_UNARY)
+        expr_destroy(expr->as.unary.operand);
+    if (expr->kind == EXPR_BINARY)
+    {
         expr_destroy(expr->as.binary.left);
         expr_destroy(expr->as.binary.right);
     }
@@ -29,13 +32,21 @@ static void expr_destroy(Expr *expr)
 
 static void statements_destroy(Statement *statement)
 {
-    while (statement) {
+    while (statement)
+    {
         Statement *next = statement->next;
-        switch (statement->kind) {
-        case STMT_LET: expr_destroy(statement->as.let.value); break;
+        switch (statement->kind)
+        {
+        case STMT_LET:
+            expr_destroy(statement->as.let.value);
+            break;
         case STMT_RETURN:
-        case STMT_EXPR: expr_destroy(statement->as.expression); break;
-        case STMT_BLOCK: statements_destroy(statement->as.block.items); break;
+        case STMT_EXPR:
+            expr_destroy(statement->as.expression);
+            break;
+        case STMT_BLOCK:
+            statements_destroy(statement->as.block.items);
+            break;
         case STMT_IF:
             expr_destroy(statement->as.branch.condition);
             statements_destroy(statement->as.branch.then_branch);
@@ -45,7 +56,17 @@ static void statements_destroy(Statement *statement)
             expr_destroy(statement->as.loop.condition);
             statements_destroy(statement->as.loop.body);
             break;
-        }
+
+        // for loop
+        case STMT_FOR:
+            statements_destroy(statement->as.iteration.initializer);
+            expr_destroy(statement->as.iteration.condition);
+            expr_destroy(statement->as.iteration.step);
+            statements_destroy(statement->as.iteration.body);
+            break;
+
+        } // switch
+
         free(statement);
         statement = next;
     }
@@ -53,7 +74,8 @@ static void statements_destroy(Statement *statement)
 
 void program_destroy(Program *program)
 {
-    if (!program) return;
+    if (!program)
+        return;
     statements_destroy(program->function.body);
     free(program);
 }
@@ -61,17 +83,24 @@ void program_destroy(Program *program)
 static bool put(FILE *out, const char *text) { return fputs(text, out) >= 0; }
 static bool indent(FILE *out, unsigned depth)
 {
-    while (depth--) if (!put(out, "  ")) return false;
+    while (depth--)
+        if (!put(out, "  "))
+            return false;
     return true;
 }
 
 static bool print_expr(FILE *out, const Expr *expr)
 {
-    if (!expr) return put(out, "<error>");
-    switch (expr->kind) {
-    case EXPR_INT: return fprintf(out, "%lld", (long long)expr->as.integer) >= 0;
-    case EXPR_BOOL: return put(out, expr->as.boolean ? "true" : "false");
-    case EXPR_NAME: return span_write(out, expr->as.name);
+    if (!expr)
+        return put(out, "<error>");
+    switch (expr->kind)
+    {
+    case EXPR_INT:
+        return fprintf(out, "%lld", (long long)expr->as.integer) >= 0;
+    case EXPR_BOOL:
+        return put(out, expr->as.boolean ? "true" : "false");
+    case EXPR_NAME:
+        return span_write(out, expr->as.name);
     case EXPR_UNARY:
         return put(out, "(") && put(out, token_name(expr->as.unary.op)) &&
                print_expr(out, expr->as.unary.operand) && put(out, ")");
@@ -85,34 +114,54 @@ static bool print_expr(FILE *out, const Expr *expr)
 
 static bool print_statements(FILE *out, const Statement *statement, unsigned depth)
 {
-    for (; statement; statement = statement->next) {
-        if (!indent(out, depth)) return false;
-        switch (statement->kind) {
+    for (; statement; statement = statement->next)
+    {
+        if (!indent(out, depth))
+            return false;
+        switch (statement->kind)
+        {
         case STMT_LET:
             if (!put(out, "let ") || !span_write(out, statement->as.let.name) ||
                 !put(out, ": ") || !span_write(out, statement->as.let.type_name) ||
                 !put(out, " = ") || !print_expr(out, statement->as.let.value) ||
-                !put(out, "\n")) return false;
+                !put(out, "\n"))
+                return false;
             break;
         case STMT_RETURN:
-            if (!put(out, "return ") || !print_expr(out, statement->as.expression) || !put(out, "\n")) return false;
+            if (!put(out, "return ") || !print_expr(out, statement->as.expression) || !put(out, "\n"))
+                return false;
             break;
         case STMT_EXPR:
-            if (!print_expr(out, statement->as.expression) || !put(out, "\n")) return false;
+            if (!print_expr(out, statement->as.expression) || !put(out, "\n"))
+                return false;
             break;
         case STMT_BLOCK:
-            if (!put(out, "block\n") || !print_statements(out, statement->as.block.items, depth + 1)) return false;
+            if (!put(out, "block\n") || !print_statements(out, statement->as.block.items, depth + 1))
+                return false;
             break;
         case STMT_IF:
             if (!put(out, "if ") || !print_expr(out, statement->as.branch.condition) || !put(out, "\n") ||
-                !print_statements(out, statement->as.branch.then_branch, depth + 1)) return false;
+                !print_statements(out, statement->as.branch.then_branch, depth + 1))
+                return false;
             if (statement->as.branch.else_branch &&
                 (!indent(out, depth) || !put(out, "else\n") ||
-                 !print_statements(out, statement->as.branch.else_branch, depth + 1))) return false;
+                 !print_statements(out, statement->as.branch.else_branch, depth + 1)))
+                return false;
             break;
         case STMT_WHILE:
             if (!put(out, "while ") || !print_expr(out, statement->as.loop.condition) || !put(out, "\n") ||
-                !print_statements(out, statement->as.loop.body, depth + 1)) return false;
+                !print_statements(out, statement->as.loop.body, depth + 1))
+                return false;
+            break;
+        case STMT_FOR:
+            if (!put(out, "for\n") ||
+                !print_statements(out, statement->as.iteration.initializer, depth + 1) ||
+                !indent(out, depth + 1) || !put(out, "condition ") ||
+                !print_expr(out, statement->as.iteration.condition) || !put(out, "\n") ||
+                !indent(out, depth + 1) || !put(out, "step ") ||
+                !print_expr(out, statement->as.iteration.step) || !put(out, "\n") ||
+                !print_statements(out, statement->as.iteration.body, depth + 1))
+                return false;
             break;
         }
     }

@@ -16,7 +16,42 @@
 #include <string.h>
 
 static const char *const token_names[TOKEN_KIND_COUNT] = {
-    [TOKEN_ERROR] = "error", [TOKEN_EOF] = "end of file", [TOKEN_IDENTIFIER] = "identifier", [TOKEN_INTEGER] = "integer", [TOKEN_FN] = "fn", [TOKEN_LET] = "let", [TOKEN_RETURN] = "return", [TOKEN_IF] = "if", [TOKEN_ELSE] = "else", [TOKEN_WHILE] = "while", [TOKEN_TRUE] = "true", [TOKEN_FALSE] = "false", [TOKEN_I64] = "i64", [TOKEN_BOOL] = "bool", [TOKEN_LPAREN] = "(", [TOKEN_RPAREN] = ")", [TOKEN_LBRACE] = "{", [TOKEN_RBRACE] = "}", [TOKEN_COLON] = ":", [TOKEN_SEMICOLON] = ";", [TOKEN_PLUS] = "+", [TOKEN_MINUS] = "-", [TOKEN_STAR] = "*", [TOKEN_SLASH] = "/", [TOKEN_PERCENT] = "%", [TOKEN_BANG] = "!", [TOKEN_ASSIGN] = "=", [TOKEN_EQUAL] = "==", [TOKEN_NOT_EQUAL] = "!=", [TOKEN_LESS] = "<", [TOKEN_LESS_EQUAL] = "<=", [TOKEN_GREATER] = ">", [TOKEN_GREATER_EQUAL] = ">=", [TOKEN_ARROW] = "->"};
+    [TOKEN_ERROR] = "error", 
+    [TOKEN_EOF] = "end of file", 
+    [TOKEN_IDENTIFIER] = "identifier", 
+    [TOKEN_INTEGER] = "integer", 
+    [TOKEN_FN] = "fn", 
+    [TOKEN_LET] = "let", 
+    [TOKEN_RETURN] = "return", 
+    [TOKEN_IF] = "if", 
+    [TOKEN_ELSE] = "else", 
+    [TOKEN_WHILE] = "while", 
+    [TOKEN_FOR] = "for",
+    [TOKEN_TRUE] = "true", 
+    [TOKEN_FALSE] = "false", 
+    [TOKEN_I64] = "i64", 
+    [TOKEN_BOOL] = "bool", 
+    [TOKEN_LPAREN] = "(", 
+    [TOKEN_RPAREN] = ")", 
+    [TOKEN_LBRACE] = "{", 
+    [TOKEN_RBRACE] = "}", 
+    [TOKEN_COLON] = ":", 
+    [TOKEN_SEMICOLON] = ";", 
+    [TOKEN_PLUS] = "+", 
+    [TOKEN_MINUS] = "-", 
+    [TOKEN_STAR] = "*", 
+    [TOKEN_SLASH] = "/", 
+    [TOKEN_PERCENT] = "%", 
+    [TOKEN_BANG] = "!", 
+    [TOKEN_ASSIGN] = "=", 
+    [TOKEN_EQUAL] = "==", 
+    [TOKEN_NOT_EQUAL] = "!=", 
+    [TOKEN_LESS] = "<", 
+    [TOKEN_LESS_EQUAL] = "<=", 
+    [TOKEN_GREATER] = ">", 
+    [TOKEN_GREATER_EQUAL] = ">=", 
+    [TOKEN_ARROW] = "->"
+};
 
 const char *token_name(TokenKind kind)
 {
@@ -105,7 +140,17 @@ typedef struct Keyword
 static TokenKind keyword_kind(SourceSpan span)
 {
     static const Keyword keywords[] = {
-        {"fn", TOKEN_FN}, {"let", TOKEN_LET}, {"return", TOKEN_RETURN}, {"if", TOKEN_IF}, {"else", TOKEN_ELSE}, {"while", TOKEN_WHILE}, {"true", TOKEN_TRUE}, {"false", TOKEN_FALSE}, {"i64", TOKEN_I64}, {"bool", TOKEN_BOOL}};
+        {"fn", TOKEN_FN}, 
+        {"let", TOKEN_LET}, 
+        {"return", TOKEN_RETURN}, 
+        {"if", TOKEN_IF}, 
+        {"else", TOKEN_ELSE}, 
+        {"while", TOKEN_WHILE}, 
+        {"for", TOKEN_FOR}, 
+        {"true", TOKEN_TRUE}, 
+        {"false", TOKEN_FALSE}, 
+        {"i64", TOKEN_I64}, 
+        {"bool", TOKEN_BOOL}};
     size_t i;
     for (i = 0; i < sizeof keywords / sizeof keywords[0]; ++i)
         if (span_equals(span, keywords[i].text))
