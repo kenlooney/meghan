@@ -1,0 +1,16 @@
+function(add_meg_test name)
+  add_executable(${name} ${name}.c)
+  target_include_directories(${name} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+  target_link_libraries(${name} PRIVATE meglang)
+  if(MSVC)
+    target_compile_options(${name} PRIVATE /W4)
+  else()
+    target_compile_options(${name} PRIVATE -Wall -Wextra -Wpedantic)
+  endif()
+  add_test(NAME ${name} COMMAND ${name})
+endfunction()
+
+add_meg_test(smoke)
+add_meg_test(source_tests)
+add_test(NAME cli_help COMMAND meg --help)
+
