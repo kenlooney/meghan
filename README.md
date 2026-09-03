@@ -31,21 +31,22 @@ executable foundation and currently supports only help and version information.
   and the supported statement forms.
 - Semantic checking for `i64` and `bool`, variable lookup, nested scopes,
   assignments, conditions, operators, and guaranteed returns.
-- Automated tests for the project, source, lexer, and CLI foundation.
+- C code generation for the currently supported expressions and statements.
+- The `meg` command-line compiler, which reads a `.meg` source file and emits
+	C code or an AST representation.
+- Automated tests for each pipeline stage, including code generation.
 
 ### Not Yet Supported
 
-- Transpiling Meghan source into C.
 - Generating machine code or object files.
-- Compiling a `.meg` source file from the command line.
 - A stable Meghan language specification.
-- A complete diagnostic command-line experience.
+- Invoking a C compiler to turn generated C into an executable.
 - Freestanding or native hosted backends.
 
 The intended long-term pipeline is:
 
 ```text
-[Meghan source] -> [tokens] -> [AST] -> [checked AST] -> [C or native backend]
+[Meghan source] -> [tokens] -> [AST] -> [checked AST] -> [C code] -> [machine code]
 ```
 
 ## Quick Start
@@ -71,25 +72,39 @@ cmake --preset linux
 cmake --build --preset linux
 ```
 
-### Run the command-line program
+### Compile a Meghan source file to C
 
-The current executable accepts one supported option at a time:
+Create a source file such as `answer.meg`:
 
-```text
-meg --help
-meg --version
+```meg
+fn main() -> i64 {
+	let answer: i64 = 40 + 2;
+	return answer;
+}
 ```
 
-Example output:
+Run `meg` with an input file. C is the default output format and is written to
+standard output unless `-o` or `--output` is supplied:
 
-```text
-usage: meg --help | --version
-meg 0.1
+```powershell
+.\bin\Debug\meg.exe -i answer.meg -o answer.c
 ```
 
-Any other argument currently prints the usage message to standard error and
-returns a non-zero exit status. The executable does not read or compile
-source files yet.
+The compiler parses and checks the source before writing C. A syntax or
+semantic error produces diagnostics and no output file is written.
+
+The command also supports `--emit ast` for a readable AST representation:
+
+```powershell
+.\bin\Debug\meg.exe --input answer.meg --emit ast
+```
+
+Use `--help` to print the command usage and `--version` to print the compiler
+version:
+
+```text
+usage: meg -i <source.meg> [-o output] [--emit c|ast]
+```
 
 ## Meghan Source Examples
 
@@ -124,9 +139,9 @@ Integer literal examples include:
 0b101010
 ```
 
-These examples demonstrate the current lexer, parser, and checker input. They
-are not executable Meghan programs yet because the command-line compiler and
-code generation are not implemented.
+These examples demonstrate the current lexer, parser, checker, and C code
+generator input. The compiler currently emits C source; use a C compiler to
+produce an executable.
 
 ## Using the Language Library
 
@@ -226,6 +241,8 @@ The test suite currently includes:
 - `parser_tests`: checks function, statement, and expression parsing.
 - `checker_tests`: checks valid programs, symbol resolution, and semantic
 	errors.
+- `pipeline_tests`: checks parsing, semantic checking, and C generation in
+  sequence.
 - `cli_help`: verifies the command-line help path.
 
 ## Developer Guide
@@ -244,10 +261,12 @@ The language library is compiled with warnings enabled (`/W4` on MSVC and
 `-Wall -Wextra -Wpedantic` on GCC). New behavior should normally include a
 focused test in `tests/` and be registered in `tests/CMakeLists.txt`.
 
-The next major implementation boundary is code generation: it will consume a
-checked AST and produce the first C output. Until then, changes should
-preserve the source-span, type, symbol, and diagnostic information needed by
-later compiler stages.
+The C generator consumes a checked AST and emits `int64_t` and `bool` C code
+for the currently supported Meghan program forms. It uses internal symbol IDs
+for generated variable names and helper functions that abort on invalid signed
+division or remainder. Future work includes invoking a C compiler and adding
+native backends while preserving source-span, type, symbol, and diagnostic
+information.
 
 ## License
 
