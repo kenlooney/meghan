@@ -21,7 +21,10 @@ Meghan (meg) aims to become a compiler that uses it's own implemented backends s
 
 I will have a lot to learn before this. This is why first its going to be a *transpiler*.
 
-## Licesning
+## What is next?
+Episode 1 begins with setting up the project and writing the first tokenizer. Maybe more! You will have to wait and see!
+
+## Licensing
 The compiler is going to be licensed under the Apache 2 license so after I get the initial version rolled out I will be releasing it to the public to also have the chance to contribute to it. 
 
  
