@@ -1,12 +1,10 @@
 # Meghan Compiler
 
-Meghan is a compiler-construction project written in C. The compiler is also
-referred to as `meg`.
-
-The project is at an early stage. It currently provides a C11 language library
-with source management, diagnostics, token definitions, a lexer, an AST, a
-parser, and a semantic checker. The `meg` command-line program is a small
-executable foundation and currently supports only help and version information.
+Meghan is a C11 compiler-construction project, also referred to as `meg`. It
+provides source management, diagnostics, lexing, parsing, semantic checking,
+and C code generation for the currently supported Meghan language forms. The
+`meg` command-line compiler reads a `.meg` source file and emits C code or a
+readable AST representation.
 
 ## Current Status
 
@@ -187,10 +185,11 @@ For example, an unterminated block comment produces an error associated with
 the comment's starting source span. An invalid integer literal produces an
 error token and increments `lexer.errors`.
 
-After parsing, a client can check the resulting program:
+After parsing, a client can check the resulting program and generate C:
 
 ```c
 #include <meglang/checker.h>
+#include <meglang/codegen.h>
 #include <meglang/parser.h>
 
 ParseResult parsed = parse_source(&source, diagnostics);
@@ -200,13 +199,17 @@ checker_init(&checker, diagnostics);
 if (parsed.errors != 0 || !checker_check(&checker, parsed.program))
 	return 1;
 
+if (!codegen_c(stdout, parsed.program, diagnostics))
+	return 1;
+
 checker_destroy(&checker);
 program_destroy(parsed.program);
 ```
 
 The checker annotates expressions with their `ValueType` and resolves names to
 symbols. Always destroy the checker before destroying the program, because the
-checked AST stores references to the checker's symbols.
+checked AST stores references to the checker's symbols. `codegen_c` expects a
+successfully checked program and writes C source to the supplied `FILE`.
 
 ## Testing
 
