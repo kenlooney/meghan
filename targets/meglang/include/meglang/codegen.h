@@ -22,5 +22,6 @@
 #include <meglang/diagnostic.h>
 
 bool codegen_c(FILE *out, const Program *program, DiagnosticSink diagnostics);
+bool codegen_freestanding_c(FILE *out, const Program *program, DiagnosticSink diagnostics);
 
 #endif // MEGLANG_CODEGEN_H
