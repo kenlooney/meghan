@@ -81,6 +81,28 @@ static bool emit_function_name(JsEmitter *emitter, const FunctionSymbol *functio
     return emit(emitter, "meg_f_%u", function->id);
 }
 
+static bool emit_arguments(JsEmitter *emitter, const Argument *argument)
+{
+    bool first = true;
+    for (; argument; argument = argument->next) {
+        if ((!first && !emit(emitter, ", ")) ||
+            !emit_expr(emitter, argument->value)) return false;
+        first = false;
+    }
+    return true;
+}
+
+static bool emit_parameters(JsEmitter *emitter, const Parameter *parameter)
+{
+    bool first = true;
+    for (; parameter; parameter = parameter->next) {
+        if ((!first && !emit(emitter, ", ")) ||
+            !emit(emitter, "meg_v_%u", parameter->symbol->id)) return false;
+        first = false;
+    }
+    return true;
+}
+
 static bool emit_integer_conversion_start(JsEmitter *emitter, Type type)
 {
     if (type.form != TYPE_VALUE) return true;
@@ -126,7 +148,10 @@ static bool emit_expr(JsEmitter *emitter, const Expr *expr)
     case EXPR_BOOL: return emit(emitter, "%s", expr->as.boolean ? "true" : "false");
     case EXPR_NAME: return emit(emitter, "meg_v_%u", expr->symbol->id);
     case EXPR_CALL:
-        return emit_function_name(emitter, expr->as.call.symbol) && emit(emitter, "()");
+        return emit_function_name(emitter, expr->as.call.symbol) &&
+               emit(emitter, "(") &&
+               emit_arguments(emitter, expr->as.call.arguments) &&
+               emit(emitter, ")");
     case EXPR_UNARY:
         if (expr->as.unary.op == TOKEN_AMPERSAND || expr->as.unary.op == TOKEN_REF)
             return emit_reference(emitter, expr->as.unary.operand);
@@ -276,7 +301,9 @@ bool codegen_js(FILE *out, const Program *program, DiagnosticSink diagnostics)
         emitter.return_type = function->return_type;
         if (!emit(&emitter, "function ") ||
             !emit_function_name(&emitter, function->symbol) ||
-            !emit(&emitter, "() ") ||
+            !emit(&emitter, "(") ||
+            !emit_parameters(&emitter, function->parameters) ||
+            !emit(&emitter, ") ") ||
             !emit_block(&emitter, function->body, 0) ||
             !emit(&emitter, "\n\n")) return false;
     }

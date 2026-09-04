@@ -30,6 +30,7 @@ struct Symbol {
 struct FunctionSymbol {
     SourceSpan name;
     Type return_type;
+    const Function *declaration;
     unsigned id;
     struct FunctionSymbol *next;
 };

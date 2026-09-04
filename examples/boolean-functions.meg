@@ -1,15 +1,19 @@
 fn main() -> i64 {
-	if is_ready() {
-		return answer();
+	if is_answer(42) {
+		return choose(42, 0);
 	} else {
 		return 0;
 	}
 }
 
-fn is_ready() -> bool {
-	return true;
+fn is_answer(value: i64) -> bool {
+	return value == 42;
 }
 
-fn answer() -> i64 {
-	return 42;
+fn choose(when_true: i64, when_false: i64) -> i64 {
+	if is_answer(when_true) {
+		return when_true;
+	} else {
+		return when_false;
+	}
 }

@@ -82,6 +82,37 @@ static bool emit_function_name(Emitter *emitter, const FunctionSymbol *function)
     return emit(emitter, "meg_f_%u", function->id);
 }
 
+static bool emit_expr(Emitter *emitter, const Expr *expr);
+
+static bool emit_arguments(Emitter *emitter, const Argument *argument)
+{
+    bool first = true;
+    for (; argument; argument = argument->next)
+    {
+        if ((!first && !emit(emitter, ", ")) ||
+            !emit_expr(emitter, argument->value))
+            return false;
+        first = false;
+    }
+    return true;
+}
+
+static bool emit_parameters(Emitter *emitter, const Parameter *parameter)
+{
+    bool first = true;
+    if (!parameter)
+        return emit(emitter, "void");
+    for (; parameter; parameter = parameter->next)
+    {
+        if ((!first && !emit(emitter, ", ")) ||
+            !emit_c_type(emitter, parameter->type) ||
+            !emit(emitter, " meg_v_%u", parameter->symbol->id))
+            return false;
+        first = false;
+    }
+    return true;
+}
+
 static bool emit_expr(Emitter *emitter, const Expr *expr)
 {
     const char *operator_text;
@@ -95,7 +126,10 @@ static bool emit_expr(Emitter *emitter, const Expr *expr)
     case EXPR_NAME:
         return emit(emitter, "meg_v_%u", expr->symbol->id);
     case EXPR_CALL:
-        return emit_function_name(emitter, expr->as.call.symbol) && emit(emitter, "()");
+        return emit_function_name(emitter, expr->as.call.symbol) &&
+               emit(emitter, "(") &&
+               emit_arguments(emitter, expr->as.call.arguments) &&
+               emit(emitter, ")");
     case EXPR_UNARY:
         if (expr->as.unary.op == TOKEN_MINUS &&
             expr->as.unary.operand->kind == EXPR_INT &&
@@ -244,7 +278,9 @@ static bool codegen_c_impl(FILE *out, const Program *program, DiagnosticSink dia
             return false;
         if (!emit(&emitter, "%s ", c_type(function->return_type)) ||
             !emit_function_name(&emitter, function->symbol) ||
-            !emit(&emitter, "(void);\n"))
+            !emit(&emitter, "(") ||
+            !emit_parameters(&emitter, function->parameters) ||
+            !emit(&emitter, ");\n"))
             return false;
     }
     if (!emit(&emitter, "\n"))
@@ -256,7 +292,9 @@ static bool codegen_c_impl(FILE *out, const Program *program, DiagnosticSink dia
             return false;
         if (!emit(&emitter, "%s ", c_type(function->return_type)) ||
             !emit_function_name(&emitter, function->symbol) ||
-            !emit(&emitter, "(void) ") ||
+            !emit(&emitter, "(") ||
+            !emit_parameters(&emitter, function->parameters) ||
+            !emit(&emitter, ") ") ||
             !emit_block(&emitter, function->body, 0) ||
             !emit(&emitter, "\n\n"))
             return false;

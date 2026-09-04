@@ -18,6 +18,7 @@
 
 static void expr_destroy(Expr *expr)
 {
+    Argument *argument;
     if (!expr)
         return;
     if (expr->kind == EXPR_UNARY)
@@ -26,6 +27,17 @@ static void expr_destroy(Expr *expr)
     {
         expr_destroy(expr->as.binary.left);
         expr_destroy(expr->as.binary.right);
+    }
+    if (expr->kind == EXPR_CALL)
+    {
+        argument = expr->as.call.arguments;
+        while (argument)
+        {
+            Argument *next = argument->next;
+            expr_destroy(argument->value);
+            free(argument);
+            argument = next;
+        }
     }
     free(expr);
 }
@@ -80,7 +92,14 @@ void program_destroy(Program *program)
     function = program->functions;
     while (function)
     {
+        Parameter *parameter = function->parameters;
         Function *next = function->next;
+        while (parameter)
+        {
+            Parameter *next_parameter = parameter->next;
+            free(parameter);
+            parameter = next_parameter;
+        }
         statements_destroy(function->body);
         free(function);
         function = next;
@@ -110,7 +129,19 @@ static bool print_expr(FILE *out, const Expr *expr)
     case EXPR_NAME:
         return span_write(out, expr->as.name);
     case EXPR_CALL:
-        return span_write(out, expr->as.call.name) && put(out, "()");
+    {
+        const Argument *argument;
+        bool first = true;
+        if (!span_write(out, expr->as.call.name) || !put(out, "("))
+            return false;
+        for (argument = expr->as.call.arguments; argument; argument = argument->next)
+        {
+            if ((!first && !put(out, ", ")) || !print_expr(out, argument->value))
+                return false;
+            first = false;
+        }
+        return put(out, ")");
+    }
     case EXPR_UNARY:
         return put(out, "(") && put(out, token_name(expr->as.unary.op)) &&
                (expr->as.unary.op != TOKEN_REF || put(out, " ")) &&
@@ -190,7 +221,22 @@ bool ast_print(FILE *out, const Program *program)
         return false;
     for (function = program->functions; function; function = function->next)
     {
-        if (!put(out, "function ") || !span_write(out, function->name) ||
+        const Parameter *parameter;
+        bool first = true;
+        if (!put(out, "function ") || !span_write(out, function->name) || !put(out, "("))
+            return false;
+        for (parameter = function->parameters; parameter; parameter = parameter->next)
+        {
+            if ((!first && !put(out, ", ")) ||
+                !span_write(out, parameter->name) || !put(out, ": ") ||
+                (parameter->type_modifier != TOKEN_ERROR &&
+                 (!put(out, token_name(parameter->type_modifier)) ||
+                  (parameter->type_modifier == TOKEN_REF && !put(out, " ")))) ||
+                !span_write(out, parameter->type_name))
+                return false;
+            first = false;
+        }
+        if (!put(out, ")") ||
             !put(out, " -> ") || !span_write(out, function->return_type_name) ||
             !put(out, "\n") || !print_statements(out, function->body, 1))
             return false;
