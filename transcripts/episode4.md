@@ -1,75 +1,71 @@
-# The Meghan Compiler: Strings Move Beyond the Lexer
+# The Meghan Compiler: Characters Join the Pipeline
 
-Hello again, this is Kenneth Looney, and I am back with the next episode in my journey of building **Meghan**, also called the **meg** compiler.
+Hello again, this is Kenneth Looney, and I am back with the next part of my compiler journey. Episode 3 proved that string literals were clearly part of the roadmap, but there was still one missing piece in the middle: single-character values. I wanted **meg** to understand the tiny building blocks of text — the difference between an ordinary ASCII character, a UTF-8 character, and a UTF-16 character.
 
-Episode 3 ended with a small but important piece of groundwork. **meg** could recognize ordinary ASCII strings, UTF-8-prefixed strings, and UTF-16-prefixed strings in the lexer, but the rest of the compiler did not know what they meant yet.
+This time I added the character literal path all the way through the compiler, and it turned out to be an excellent way to tighten up the boundaries between lexing, parsing, type checking, and code generation.
 
-So we continued with adding string literals. This time the tokens started moving farther through the compiler pipeline, from the lexer into the abstract syntax tree and the semantic checker.
+## Why character literals matter so much
 
-## How does a string become part of the AST?
+A string is a sequence, but a character is a single value. Once I started thinking in terms of a real language pipeline, it became obvious that the compiler needed to distinguish those two things clearly.
 
-The parser now recognizes string tokens as expressions. I added an `EXPR_STRING` expression kind that stores the literal's source span and its encoding form.
-
-The AST can distinguish the three spellings that the lexer already knows about:
+I wanted the lexer to recognize these forms:
 
 ```meg
-"plain ASCII"
-u8"caf\u00e9"
-u"snowman: \u2603"
+'A'
+u8'\xc3\xa9'
+u'\xf0\x9f\x98\x80'
 ```
 
-The ordinary and `u8` forms are represented as the string form, while the `u` form is represented as UTF-16. For this first step, the AST keeps the original `SourceSpan` instead of allocating a decoded character buffer.
+The plain form is restricted to ASCII. The `u8` form expects a valid UTF-8 code point. The `u` form expects a wide character value that eventually becomes a 32-bit code point in the compiler. That gave me a much more concrete way to test not just syntax, but also the encoding rules.
 
-That choice keeps ownership simple. The source object already owns the original source text, so the AST can refer to the literal without creating another allocation that it has to release.
+## How the lexer changed
 
-## What does the AST printer do now?
+The lexer now emits three distinct token kinds: `TOKEN_CHAR`, `TOKEN_UTF8_CHAR`, and `TOKEN_UCHAR`.
 
-The AST printer has an `EXPR_STRING` case. It writes the original literal span back out, including its prefix, quotes, and source spelling.
+That was the first real sign that the text pipeline was becoming explicit. The scanner now validates the literal shape before handing it off. It rejects empty literals, rejects multi-character forms, rejects plain non-ASCII bytes in an ASCII literal, and validates malformed UTF-8 sequences instead of letting them slip through.
 
-This gives me a useful checkpoint before generating target code. I can parse a program and inspect its AST to confirm that the string reached the tree without having to decide yet whether C should receive bytes, an array, or a pointer to some storage.
+I also had to be careful about escape sequences. A character literal can include a simple escape like `\n`, but it cannot contain more than one character in the final value. That boundary matters because the parser will later decode the literal into its actual numeric value.
 
-The cleanup path also understands the new expression shape. At the moment there is no string buffer to free because the AST stores only the source span. When strings eventually own decoded data, that ownership rule will need to grow with them.
+Once the scanner had all of that in place, the compiler could finally distinguish the three character encodings at the token level rather than treating them as a vague blob of text.
 
-## How does the checker know what a string is?
+## What changed in the parser and AST?
 
-The checker now has two value types: `TYPE_STRING` and `TYPE_USTRING`. An `EXPR_STRING` receives one of those types based on its encoding.
+The parser now turns those token kinds into expression nodes. I added `EXPR_CHAR`, `EXPR_UTF8_CHAR`, and `EXPR_UCHAR`, and each one stores both the original source span and a decoded numeric value.
 
-That means the checker can now distinguish a normal or UTF-8 string from a UTF-16 string, even though both are still only expressions and not complete variables or runtime values.
+That means the AST is no longer just a place where text gets remembered. It can keep enough information to know exactly what the source literal meant. An ASCII literal like `'A'` becomes `65`. A UTF-8 literal like `u8'\xc3\xa9'` becomes `233`. A wide literal like `u'\xf0\x9f\x98\x80'` becomes `128512`.
 
-The type also gives the existing semantic rules something concrete to reject. Strings are not integers, so they cannot be used in arithmetic:
+This is a nice example of the boundary I want in the compiler: the lexer decides what the source text is, the parser decides what the expression shape is, and the AST stores the value in a way that the checker and code generators can use.
 
-```meg
-fn main() -> i64 {
-	return "hello" + 1;
-}
-```
+## How the checker sees them
 
-The parser accepts the shape of this expression, but the checker rejects it with the integer-only arithmetic diagnostic. This is exactly the kind of separation I want from the pipeline: syntax can be recognized first, and meaning can be enforced afterward.
+The semantic checker now assigns value types for each literal kind:
 
-A UTF-16 literal returned from an `i64` function is rejected for a different reason. The checker recognizes it as `TYPE_USTRING`, then sees that it does not match the function's declared return type.
+- `char` becomes `TYPE_CHAR`
+- `u8'...'` becomes `TYPE_UTF8_CHAR`
+- `u'...'` becomes `TYPE_UCHAR`
 
-## Why not generate C and JavaScript yet?
+That was an important step because the compiler can now tell the difference between plain character text and wider Unicode characters before it ever reaches target code generation. It is no longer guessing based on spelling alone.
 
-Because the representation decision is still ahead of me. A UTF-8 string could become a byte sequence or a C string, while UTF-16 needs a sequence of 16-bit code units. JavaScript has its own Unicode and UTF-16 behavior, but that does not automatically define what a Meghan string should mean.
+The checker also makes use of those types when it decides whether an expression is valid in a given context. Character literals are value expressions, not strings, and they are not integers in the same sense as numeric types. That separation keeps the pipeline more honest.
 
-For now, the careful boundary is:
+## What the code generators do now
 
-```text
-[string token] -> [EXPR_STRING] -> [checked string type]
-```
+The C backend emits numeric constants for these literals. A plain ASCII character becomes a small `uint8_t`, while UTF-8 and UTF-16 characters turn into `uint32_t` values. That is a good fit for the project right now because the compiler is still focused on correctness and representation before it tries to design a full runtime string model.
 
-The C and JavaScript generators still do not emit string expressions. Declared `string` and `ustring` variables are also not supported yet because the parser's type-name list still contains the numeric and boolean types.
+The JavaScript backend does the same kind of thing in a simpler form: it emits the numeric value directly. The generated output is still a long way from a proper text runtime, but the literal path is now real and testable.
 
-## How did I test this step?
+## What went wrong
 
-I added checker tests for string expressions. One test confirms that ordinary string arithmetic is rejected and that the expression becomes an error type. Another confirms that a UTF-16 literal receives `TYPE_USTRING` before the surrounding `i64` return mismatch is reported.
+The hardest part was not the parser. It was the validation rules.
 
-The lexer, parser, AST, and checker tests now cover progressively more of the string path. The focused Windows tests passed, and the complete Linux test suite also passed under WSL. The compiler is not finished with strings, but each layer now has a clear responsibility and a testable boundary.
+The scanner had to reject malformed UTF-8 rather than accepting any high-bit byte, and it had to keep plain character literals from silently accepting non-ASCII values. That was one of those places where a tiny bug can hide in plain sight, because a lot of text looks valid if you only look at the first byte and not the whole sequence.
+
+I also had to make sure the code did not accidentally treat a UTF-8 or UTF-16 character as a normal string. They are not the same thing. They look related, but they live in different places in the compiler pipeline and they need different type rules.
 
 ## What is next?
 
-The next string step is to let the parser accept `string` and `ustring` in declarations and function return types. Then the checker can validate string initializers, assignments, and returns before either backend commits to a runtime representation.
+The next step is to let these character types participate in declarations and function signatures so they are not limited to literal expressions. Once `char`, `utf8_char`, and `uchar` can appear in variable and return types, I can start building the rest of the text story around them.
 
-After that, I will need to decide how owned string data works and how C and JavaScript should represent the two encodings. For now, **meg** has moved strings one important stage beyond the lexer, and I have a much clearer place to continue from.
+That should lead naturally into the next big decision: what a real Meghan string should look like in memory and how both C and JavaScript should represent it. For now, though, I have a much more solid foundation. ASCII, UTF-8, and UTF-16 character literals are all recognized, validated, checked, and generated with real semantics behind them.
 
-Thank you for joining me for this next part of the journey. Take care, and I will see you very soon!
+Thank you for joining me for this part of the journey. I will see you very soon!

@@ -65,8 +65,10 @@ typedef enum TokenKind {
     TOKEN_AMPERSAND,
     TOKEN_STRING,
     TOKEN_CHAR,
-    TOKEN_USTRING,
+    TOKEN_UTF8_CHAR,
     TOKEN_UCHAR,
+    TOKEN_USTRING,
+
     TOKEN_KIND_COUNT
 } TokenKind;
 

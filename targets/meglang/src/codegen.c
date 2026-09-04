@@ -52,6 +52,11 @@ static const char *c_type(ValueType type)
         return "uint64_t";
     case TYPE_BOOL:
         return "bool";
+    case TYPE_CHAR:
+        return "uint8_t";
+    case TYPE_UTF8_CHAR:
+    case TYPE_UCHAR:
+        return "uint32_t";
     default:
         return "int64_t";
     }
@@ -123,6 +128,15 @@ static bool emit_expr(Emitter *emitter, const Expr *expr)
                     (unsigned long long)expr->as.integer);
     case EXPR_BOOL:
         return emit(emitter, "%s", expr->as.boolean ? "true" : "false");
+    case EXPR_CHAR:
+        return emit(emitter, "((uint8_t)UINT32_C(%u))",
+                    (unsigned)expr->as.character.value);
+    case EXPR_UTF8_CHAR:
+        return emit(emitter, "UINT32_C(%u)",
+                    (unsigned)expr->as.utf8_character.value);
+    case EXPR_UCHAR:
+        return emit(emitter, "UINT32_C(%u)",
+                    (unsigned)expr->as.uchar.value);
     case EXPR_NAME:
         return emit(emitter, "meg_v_%u", expr->symbol->id);
     case EXPR_CALL:
