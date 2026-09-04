@@ -33,16 +33,26 @@ static const char *c_type(ValueType type)
 {
     switch (type)
     {
-    case TYPE_I8: return "int8_t";
-    case TYPE_I16: return "int16_t";
-    case TYPE_I32: return "int32_t";
-    case TYPE_I64: return "int64_t";
-    case TYPE_U8: return "uint8_t";
-    case TYPE_U16: return "uint16_t";
-    case TYPE_U32: return "uint32_t";
-    case TYPE_U64: return "uint64_t";
-    case TYPE_BOOL: return "bool";
-    default: return "int64_t";
+    case TYPE_I8:
+        return "int8_t";
+    case TYPE_I16:
+        return "int16_t";
+    case TYPE_I32:
+        return "int32_t";
+    case TYPE_I64:
+        return "int64_t";
+    case TYPE_U8:
+        return "uint8_t";
+    case TYPE_U16:
+        return "uint16_t";
+    case TYPE_U32:
+        return "uint32_t";
+    case TYPE_U64:
+        return "uint64_t";
+    case TYPE_BOOL:
+        return "bool";
+    default:
+        return "int64_t";
     }
 }
 
@@ -88,8 +98,8 @@ static bool emit_expr(Emitter *emitter, const Expr *expr)
         {
             bool is_unsigned = is_unsigned_integer_type(expr->type);
             const char *helper = expr->as.binary.op == TOKEN_SLASH
-                ? (is_unsigned ? "meg_div_u64" : "meg_div_i64")
-                : (is_unsigned ? "meg_rem_u64" : "meg_rem_i64");
+                                     ? (is_unsigned ? "meg_div_u64" : "meg_div_i64")
+                                     : (is_unsigned ? "meg_rem_u64" : "meg_rem_i64");
             return emit(emitter, "%s(", helper) && emit_expr(emitter, expr->as.binary.left) &&
                    emit(emitter, ", ") && emit_expr(emitter, expr->as.binary.right) && emit(emitter, ")");
         }
@@ -173,30 +183,60 @@ static bool emit_statements(Emitter *emitter, const Statement *statement, unsign
     return true;
 }
 
-bool codegen_c(FILE *out, const Program *program, DiagnosticSink diagnostics)
+static bool codegen_c_impl(FILE *out, const Program *program, DiagnosticSink diagnostics, bool freestanding)
 {
     Emitter emitter = {out, diagnostics, false};
+    const char *trap = freestanding ? "meg_trap()" : "abort()";
     if (!out || !program)
         return false;
+    if (freestanding)
+    {
+        if (!emit(&emitter,
+                  "#include <stdbool.h>\n#include <stdint.h>\n\n"
+                  "extern void meg_panic(void);\n"
+                  "static void meg_trap(void) { meg_panic(); for (;;) {} }\n"))
+            return false;
+    }
+    else if (!emit(&emitter,
+                   "#include <stdbool.h>\n#include <stdint.h>\n#include <stdlib.h>\n\n"))
+        return false;
+
+    /* Division helpers trap instead of invoking C's undefined behaviour. */
     if (!emit(&emitter,
-              "#include <stdbool.h>\n#include <stdint.h>\n#include <stdlib.h>\n\n"
               "int64_t meg_div_i64(int64_t a, int64_t b) {\n"
-              "    if (b == 0 || (a == INT64_MIN && b == -1)) abort();\n"
+              "    if (b == 0 || (a == INT64_MIN && b == -1)) %s;\n"
               "    return a / b;\n}\n"
               "int64_t meg_rem_i64(int64_t a, int64_t b) {\n"
-              "    if (b == 0 || (a == INT64_MIN && b == -1)) abort();\n"
+              "    if (b == 0 || (a == INT64_MIN && b == -1)) %s;\n"
               "    return a %% b;\n}\n\n"
               "uint64_t meg_div_u64(uint64_t a, uint64_t b) {\n"
-              "    if (b == 0) abort();\n"
+              "    if (b == 0) %s;\n"
               "    return a / b;\n}\n"
               "uint64_t meg_rem_u64(uint64_t a, uint64_t b) {\n"
-              "    if (b == 0) abort();\n"
-              "    return a %% b;\n}\n\n"
-              "static %s meg_main(void) ", c_type(program->function.return_type)))
+              "    if (b == 0) %s;\n"
+              "    return a %% b;\n}\n\n",
+              trap, trap, trap, trap))
+        return false;
+
+    if (!emit(&emitter, freestanding ? "%s meg_entry(void) " : "static %s meg_main(void) ",
+              c_type(program->function.return_type)))
         return false;
     if (!emit_block(&emitter, program->function.body, 0))
         return false;
-    if (!emit(&emitter, "\n\nint main(void) { return (int)meg_main(); }\n"))
+    if (!freestanding &&
+        !emit(&emitter, "\n\nint main(void) { return (int)meg_main(); }\n"))
+        return false;
+    if (freestanding && !emit(&emitter, "\n"))
         return false;
     return !emitter.failed && !ferror(out);
+}
+bool codegen_c(FILE *out, const Program *program, DiagnosticSink diagnostics)
+{
+    return codegen_c_impl(out, program, diagnostics, false);
+}
+
+bool codegen_freestanding_c(FILE *out, const Program *program,
+                            DiagnosticSink diagnostics)
+{
+    return codegen_c_impl(out, program, diagnostics, true);
 }
