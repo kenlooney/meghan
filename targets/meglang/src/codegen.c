@@ -68,13 +68,19 @@ static bool is_unsigned_integer_type(ValueType type)
            type == TYPE_U32 || type == TYPE_U64;
 }
 
+static bool emit_c_type(Emitter *emitter, Type type)
+{
+    return emit(emitter, "%s%s", c_type(type.value),
+                type.form == TYPE_VALUE ? "" : " *");
+}
+
 static bool emit_expr(Emitter *emitter, const Expr *expr)
 {
     const char *operator_text;
     switch (expr->kind)
     {
     case EXPR_INT:
-        return emit(emitter, "((%s)UINT64_C(%llu))", c_type(expr->type),
+        return emit(emitter, "((%s)UINT64_C(%llu))", c_type(expr->type.value),
                     (unsigned long long)expr->as.integer);
     case EXPR_BOOL:
         return emit(emitter, "%s", expr->as.boolean ? "true" : "false");
@@ -83,20 +89,21 @@ static bool emit_expr(Emitter *emitter, const Expr *expr)
     case EXPR_UNARY:
         if (expr->as.unary.op == TOKEN_MINUS &&
             expr->as.unary.operand->kind == EXPR_INT &&
-            is_signed_integer_type(expr->type))
+            is_signed_integer_type(expr->type.value))
         {
-            if (expr->type == TYPE_I64 &&
+            if (expr->type.value == TYPE_I64 &&
                 expr->as.unary.operand->as.integer == (uint64_t)INT64_MAX + 1)
                 return emit(emitter, "INT64_MIN");
-            return emit(emitter, "((%s)(-INT64_C(%llu)))", c_type(expr->type),
+            return emit(emitter, "((%s)(-INT64_C(%llu)))", c_type(expr->type.value),
                         (unsigned long long)expr->as.unary.operand->as.integer);
         }
-        return emit(emitter, "(%s", token_name(expr->as.unary.op)) &&
+        return emit(emitter, "(%s", expr->as.unary.op == TOKEN_REF
+                    ? "&" : token_name(expr->as.unary.op)) &&
                emit_expr(emitter, expr->as.unary.operand) && emit(emitter, ")");
     case EXPR_BINARY:
         if (expr->as.binary.op == TOKEN_SLASH || expr->as.binary.op == TOKEN_PERCENT)
         {
-            bool is_unsigned = is_unsigned_integer_type(expr->type);
+            bool is_unsigned = is_unsigned_integer_type(expr->type.value);
             const char *helper = expr->as.binary.op == TOKEN_SLASH
                                      ? (is_unsigned ? "meg_div_u64" : "meg_div_i64")
                                      : (is_unsigned ? "meg_rem_u64" : "meg_rem_i64");
@@ -131,8 +138,8 @@ static bool emit_statements(Emitter *emitter, const Statement *statement, unsign
         switch (statement->kind)
         {
         case STMT_LET:
-            if (!emit(emitter, "%s meg_v_%u = ", c_type(statement->as.let.type),
-                      statement->as.let.symbol->id) ||
+            if (!emit_c_type(emitter, statement->as.let.type) ||
+                !emit(emitter, " meg_v_%u = ", statement->as.let.symbol->id) ||
                 !emit_expr(emitter, statement->as.let.value) || !emit(emitter, ";\n"))
                 return false;
             break;
@@ -168,8 +175,9 @@ static bool emit_statements(Emitter *emitter, const Statement *statement, unsign
         case STMT_FOR:
         {
             const Statement *initializer = statement->as.iteration.initializer;
-            if (!emit(emitter, "for (%s meg_v_%u = ", c_type(initializer->as.let.type),
-                      initializer->as.let.symbol->id) ||
+            if (!emit(emitter, "for (") ||
+                !emit_c_type(emitter, initializer->as.let.type) ||
+                !emit(emitter, " meg_v_%u = ", initializer->as.let.symbol->id) ||
                 !emit_expr(emitter, initializer->as.let.value) || !emit(emitter, "; ") ||
                 !emit_expr(emitter, statement->as.iteration.condition) || !emit(emitter, "; ") ||
                 !emit_expr(emitter, statement->as.iteration.step) || !emit(emitter, ") ") ||

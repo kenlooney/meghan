@@ -2,5 +2,5 @@
 
 int main(void)
 {
-    return meg_version() == 2 ? 0 : 1;
+    return meg_version() == 3 ? 0 : 1;
 }

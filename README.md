@@ -35,7 +35,44 @@ AST representation.
 	statements.
 - Freestanding-compatible C output with a `meg_entry` entry point and an
 	external `meg_panic` trap hook.
+- Pointer and reference types for the supported fixed-width integer types,
+	including address-taking, dereferencing, and assignment through a
+	dereferenced value.
 - Automated tests for each pipeline stage, including code generation.
+
+## Pointers and References
+
+Meghan supports typed pointers and references to fixed-width integer values.
+Use `*` in a declaration for a pointer, `ref` for a reference, `&` to take an
+address, and unary `*` to read or write through either form:
+
+```meg
+fn main() -> i64 {
+	let value: i64 = 40;
+	let pointer: *i64 = &value;
+	*pointer = *pointer + 1;
+	return value;
+}
+```
+
+References use the same dereference syntax:
+
+```meg
+let value: i64 = 40;
+let reference: ref i64 = ref value;
+*reference = *reference + 2;
+```
+
+Address-taking and references require an assignable value, and pointer or
+reference types must match their underlying value type exactly. For example,
+an `*i16` cannot be assigned to an `*i8`. The checker also rejects
+dereferencing a non-pointer value and assignments whose types do not match.
+
+The C generator emits native typed pointers such as `int64_t *`. The
+JavaScript generator models references with objects that provide `get` and
+`set` operations, applying the same integer-width normalization used by other
+assignments. The current implementation does not include heap allocation,
+pointer arithmetic, null pointers, or a complete memory model.
 
 ### Not Yet Supported
 
@@ -170,13 +207,13 @@ require `bool`.
 The currently recognized keywords are:
 
 ```text
-fn let return if else while for true false i8 i16 i32 i64 u8 u16 u32 u64 bool
+fn let return if else while for true false ref i8 i16 i32 i64 u8 u16 u32 u64 bool
 ```
 
 The lexer recognizes these operators and punctuation:
 
 ```text
-( ) { } : ; + - * / % ! = == != < <= > >= ->
+( ) { } : ; + - * / % ! & = == != < <= > >= ->
 ```
 
 Integer literal examples include:
@@ -332,6 +369,8 @@ The test suite currently includes:
 	scoping.
 - `freestanding_tests`: checks freestanding C entry-point and trap-hook
 	generation without hosted runtime dependencies.
+- `pointer_tests`: checks pointer and reference typing, dereferencing,
+	assignment, and C and JavaScript generation.
 - `cli_help`: verifies the command-line help path.
 
 ## Developer Guide
@@ -356,8 +395,9 @@ freestanding-compatible C exposes `meg_entry` and an external `meg_panic` hook.
 Both C modes use internal symbol IDs for generated variable names and helper
 functions that reject invalid signed division or remainder. Future work
 includes invoking target-language compilers, adding platform startup code, and
-building native backends while preserving source-span, type, symbol, and
-diagnostic information.
+building native backends. Pointer and reference support currently operates on
+typed local values; future memory work must preserve source-span, type, symbol,
+and diagnostic information as the model grows.
 
 ## License
 

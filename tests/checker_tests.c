@@ -73,8 +73,8 @@ int main(void)
     EXPECT(result.errors == 0);
     checker_init(&checker, sink);
     EXPECT(checker_check(&checker, result.program));
-    EXPECT(result.program->function.body->as.block.items->as.let.type == TYPE_I16);
-    EXPECT(result.program->function.body->as.block.items->next->as.let.type == TYPE_I32);
+    EXPECT(result.program->function.body->as.block.items->as.let.type.value == TYPE_I16);
+    EXPECT(result.program->function.body->as.block.items->next->as.let.type.value == TYPE_I32);
     EXPECT(result.program->function.return_type == TYPE_I32);
     checker_destroy(&checker);
     program_destroy(result.program);
@@ -102,10 +102,10 @@ int main(void)
     checker_init(&checker, sink);
     EXPECT(checker_check(&checker, result.program));
     EXPECT(result.program->function.return_type == TYPE_U64);
-    EXPECT(result.program->function.body->as.block.items->as.let.type == TYPE_U8);
-    EXPECT(result.program->function.body->as.block.items->next->as.let.type == TYPE_U16);
-    EXPECT(result.program->function.body->as.block.items->next->next->as.let.type == TYPE_U32);
-    EXPECT(result.program->function.body->as.block.items->next->next->next->as.let.type == TYPE_U64);
+    EXPECT(result.program->function.body->as.block.items->as.let.type.value == TYPE_U8);
+    EXPECT(result.program->function.body->as.block.items->next->as.let.type.value == TYPE_U16);
+    EXPECT(result.program->function.body->as.block.items->next->next->as.let.type.value == TYPE_U32);
+    EXPECT(result.program->function.body->as.block.items->next->next->next->as.let.type.value == TYPE_U64);
     checker_destroy(&checker);
     program_destroy(result.program);
     source_destroy(&source);
