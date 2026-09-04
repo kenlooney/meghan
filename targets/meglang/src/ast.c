@@ -130,6 +130,12 @@ static bool print_expr(FILE *out, const Expr *expr)
         return span_write(out, expr->as.name);
     case EXPR_STRING:
         return span_write(out, expr->as.string.literal);
+    case EXPR_CHAR:
+        return span_write(out, expr->as.character.literal);
+    case EXPR_UTF8_CHAR:
+        return span_write(out, expr->as.utf8_character.literal);
+    case EXPR_UCHAR:
+        return span_write(out, expr->as.uchar.literal);
     case EXPR_CALL:
     {
         const Argument *argument;

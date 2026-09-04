@@ -24,17 +24,18 @@ AST representation.
   whitespace, and comments.
 - Decimal, hexadecimal (`0x`), and binary (`0b`) integer literals.
 - Line comments (`//`) and block comments (`/* ... */`).
-- Lexing ASCII, UTF-8-prefixed (`u8`) and UTF-16-prefixed (`u`) string
-	literals, including escaped quotes and UTF-8 validation.
+- Lexing ASCII, UTF-8-prefixed (`u8`), and UTF-16-prefixed (`u`) character
+	and string literals, including escaped quotes and UTF-8 validation.
 - Parsing multiple functions with typed parameters, blocks, declarations,
 	returns, conditionals, `while` and `for` loops, expressions, and calls.
-- An AST for functions, parameters, call arguments, integer and boolean values,
-	string literals, names, unary and binary expressions, and the supported
+- An AST for functions, parameters, call arguments, integer, boolean, character,
+	and string literals, names, unary and binary expressions, and the supported
 	statement forms.
 - Semantic checking for `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`,
-	`u64`, and `bool`; variable lookup; nested scopes; assignments; conditions;
-	operators; loop and parameter scopes; call arity and argument types; string
-	expression types; literal ranges; and guaranteed returns.
+	`u64`, `bool`, `char`, `utf8_char`, and `uchar`; variable lookup; nested
+	scopes; assignments; conditions; operators; loop and parameter scopes; call
+	arity and argument types; string and character expression types; literal
+	ranges; and guaranteed returns.
 - C and JavaScript code generation for typed function signatures, calls, and
 	the currently supported expressions and statements.
 - Freestanding-compatible C output with a `meg_entry` entry point and an
@@ -135,32 +136,38 @@ slice, or nested-pointer types needed to expose that interface.
 See [`examples/parameters.meg`](examples/parameters.meg) for value and pointer
 parameters used in a complete program.
 
-## String Literals
+## Character and String Literals
 
-The lexer recognizes three string forms:
+The lexer recognizes both character and string forms:
 
 ```meg
+'A'
+u8'\xc3\xa9'
+u'\xf0\x9f\x98\x80'
 "plain ASCII"
 u8"caf\u00e9"
 u"snowman: \u2603"
 ```
 
-An unprefixed string is restricted to ASCII. The `u8` prefix identifies a
-UTF-8 string, and the `u` prefix identifies a UTF-16 string. The lexer accepts
-escaped quotes and validates the UTF-8 byte sequence in prefixed strings.
-Malformed UTF-8, non-ASCII bytes in an unprefixed string, and unterminated
-strings produce diagnostics and error tokens.
+Plain ASCII characters and strings are restricted to ASCII. The `u8` prefix
+identifies a UTF-8 character or string, while the `u` prefix identifies a
+UTF-16 character or string. The lexer accepts escaped quotes and validates the
+UTF-8 byte sequence in prefixed forms. Malformed UTF-8, non-ASCII bytes in an
+unprefixed literal, and unterminated literals produce diagnostics and error
+symbols.
 
-String literals now continue through the parser into `EXPR_STRING` AST nodes and
-the semantic checker. Ordinary and UTF-8 strings receive `TYPE_STRING`, while
-UTF-16 strings receive `TYPE_USTRING`. The AST keeps the original source span,
-so the printer can reproduce the literal without allocating decoded storage.
+Character literals continue through the parser into `EXPR_CHAR`,
+`EXPR_UTF8_CHAR`, and `EXPR_UCHAR` AST nodes, while string literals become
+`EXPR_STRING` nodes with their encoding metadata. These are checked as
+`TYPE_CHAR`, `TYPE_UTF8_CHAR`, `TYPE_UCHAR`, `TYPE_STRING`, and `TYPE_USTRING`
+respectively. The AST keeps the original literal span so the printer can
+reproduce the source spelling without allocating decoded storage.
 
-Strings are not integer values, so expressions such as `"hello" + 1` are
-rejected by the checker. Declared `string` and `ustring` variables, string
-initializers, and C or JavaScript string generation are not supported yet.
-Character and UTF-16 character token kinds are reserved for future language
-work but are not emitted by the current scanner.
+Characters and strings are not interchangeable with integer values. Expressions
+such as `"hello" + 1` and other mismatched arithmetic patterns are rejected by
+the checker. Declared `string` and `ustring` variables, string initializers,
+and C or JavaScript string generation are not supported yet, but the literal
+path itself is now implemented and validated across the compiler pipeline.
 
 ## Quick Start
 

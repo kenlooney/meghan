@@ -146,6 +146,9 @@ static bool emit_expr(JsEmitter *emitter, const Expr *expr)
     switch (expr->kind) {
     case EXPR_INT: return emit(emitter, "%llun", (unsigned long long)expr->as.integer);
     case EXPR_BOOL: return emit(emitter, "%s", expr->as.boolean ? "true" : "false");
+    case EXPR_CHAR: return emit(emitter, "%u", (unsigned)expr->as.character.value);
+    case EXPR_UTF8_CHAR: return emit(emitter, "%u", (unsigned)expr->as.utf8_character.value);
+    case EXPR_UCHAR: return emit(emitter, "%u", (unsigned)expr->as.uchar.value);
     case EXPR_NAME: return emit(emitter, "meg_v_%u", expr->symbol->id);
     case EXPR_CALL:
         return emit_function_name(emitter, expr->as.call.symbol) &&

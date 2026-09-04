@@ -81,8 +81,15 @@ static Token parse_type_name(Parser *parser)
         advance(parser);
         break;
     default:
-        error_at(parser, token.span,
-                 "expected integer type or 'bool'");
+        if (token.kind == TOKEN_IDENTIFIER &&
+            (span_equals(token.span, "string") ||
+             span_equals(token.span, "ustring") ||
+             span_equals(token.span, "char") ||
+             span_equals(token.span, "utf8_char") ||
+             span_equals(token.span, "uchar")))
+            advance(parser);
+        else
+            error_at(parser, token.span, "expected type name");
         break;
     }
     return token;
@@ -157,6 +164,44 @@ static bool integer_value(Token token, uint64_t *out)
     return true;
 }
 
+static uint32_t character_value(Token token)
+{
+    const unsigned char *text =
+        (const unsigned char *)token.span.source->text + token.span.start;
+    size_t i = token.kind == TOKEN_CHAR ? 1 :
+               token.kind == TOKEN_UTF8_CHAR ? 3 : 2;
+    unsigned char c = text[i];
+
+    if (c == '\\')
+    {
+        switch (text[i + 1])
+        {
+        case '0': return 0;
+        case 'a': return '\a';
+        case 'b': return '\b';
+        case 't': return '\t';
+        case 'n': return '\n';
+        case 'v': return '\v';
+        case 'f': return '\f';
+        case 'r': return '\r';
+        default: return text[i + 1];
+        }
+    }
+    if (c < 0x80)
+        return c;
+    if (c < 0xe0)
+        return ((uint32_t)(c & 0x1f) << 6) |
+               (uint32_t)(text[i + 1] & 0x3f);
+    if (c < 0xf0)
+        return ((uint32_t)(c & 0x0f) << 12) |
+               ((uint32_t)(text[i + 1] & 0x3f) << 6) |
+               (uint32_t)(text[i + 2] & 0x3f);
+    return ((uint32_t)(c & 0x07) << 18) |
+           ((uint32_t)(text[i + 1] & 0x3f) << 12) |
+           ((uint32_t)(text[i + 2] & 0x3f) << 6) |
+           (uint32_t)(text[i + 3] & 0x3f);
+}
+
 static Expr *parse_expression(Parser *parser, unsigned minimum);
 
 static Expr *parse_primary(Parser *parser)
@@ -168,6 +213,29 @@ static Expr *parse_primary(Parser *parser)
         expr = new_expr(EXPR_STRING, token.span);
         expr->as.string.encoding = token.kind == TOKEN_STRING ? STRING_UTF8 : STRING_UTF16;
         expr->as.string.literal = token.span;
+        advance(parser);
+        return expr;
+    }
+    if (token.kind == TOKEN_CHAR || token.kind == TOKEN_UTF8_CHAR || token.kind == TOKEN_UCHAR)
+    {
+        expr = new_expr(token.kind == TOKEN_CHAR ? EXPR_CHAR :
+                        token.kind == TOKEN_UTF8_CHAR ? EXPR_UTF8_CHAR : EXPR_UCHAR,
+                        token.span);
+        if (token.kind == TOKEN_CHAR)
+        {
+            expr->as.character.literal = token.span;
+            expr->as.character.value = character_value(token);
+        }
+        else if (token.kind == TOKEN_UTF8_CHAR)
+        {
+            expr->as.utf8_character.literal = token.span;
+            expr->as.utf8_character.value = character_value(token);
+        }
+        else
+        {
+            expr->as.uchar.literal = token.span;
+            expr->as.uchar.value = character_value(token);
+        }
         advance(parser);
         return expr;
     }
