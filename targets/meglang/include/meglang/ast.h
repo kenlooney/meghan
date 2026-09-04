@@ -24,7 +24,14 @@
 
 typedef enum ValueType{
     TYPE_ERROR,
+    TYPE_I8,
+    TYPE_I16,
+    TYPE_I32,
     TYPE_I64,
+    TYPE_U8,
+    TYPE_U16,
+    TYPE_U32,
+    TYPE_U64,
     TYPE_BOOL
 } ValueType;
 
@@ -46,7 +53,7 @@ struct Expr {
     ValueType type;
     const Symbol *symbol;
     union {
-        int64_t integer;
+        uint64_t integer;
         bool boolean;
         SourceSpan name;
         struct {TokenKind op; Expr *operand;} unary;
@@ -87,6 +94,7 @@ typedef struct Function {
     SourceSpan span;
     SourceSpan name;
     SourceSpan return_type_name;
+    ValueType return_type;
     Statement *body;
 } Function;
 

@@ -31,7 +31,31 @@ static bool emit_indent(Emitter *emitter, unsigned depth)
 
 static const char *c_type(ValueType type)
 {
-    return type == TYPE_BOOL ? "bool" : "int64_t";
+    switch (type)
+    {
+    case TYPE_I8: return "int8_t";
+    case TYPE_I16: return "int16_t";
+    case TYPE_I32: return "int32_t";
+    case TYPE_I64: return "int64_t";
+    case TYPE_U8: return "uint8_t";
+    case TYPE_U16: return "uint16_t";
+    case TYPE_U32: return "uint32_t";
+    case TYPE_U64: return "uint64_t";
+    case TYPE_BOOL: return "bool";
+    default: return "int64_t";
+    }
+}
+
+static bool is_signed_integer_type(ValueType type)
+{
+    return type == TYPE_I8 || type == TYPE_I16 ||
+           type == TYPE_I32 || type == TYPE_I64;
+}
+
+static bool is_unsigned_integer_type(ValueType type)
+{
+    return type == TYPE_U8 || type == TYPE_U16 ||
+           type == TYPE_U32 || type == TYPE_U64;
 }
 
 static bool emit_expr(Emitter *emitter, const Expr *expr)
@@ -40,18 +64,32 @@ static bool emit_expr(Emitter *emitter, const Expr *expr)
     switch (expr->kind)
     {
     case EXPR_INT:
-        return emit(emitter, "INT64_C(%lld)", (long long)expr->as.integer);
+        return emit(emitter, "((%s)UINT64_C(%llu))", c_type(expr->type),
+                    (unsigned long long)expr->as.integer);
     case EXPR_BOOL:
         return emit(emitter, "%s", expr->as.boolean ? "true" : "false");
     case EXPR_NAME:
         return emit(emitter, "meg_v_%u", expr->symbol->id);
     case EXPR_UNARY:
+        if (expr->as.unary.op == TOKEN_MINUS &&
+            expr->as.unary.operand->kind == EXPR_INT &&
+            is_signed_integer_type(expr->type))
+        {
+            if (expr->type == TYPE_I64 &&
+                expr->as.unary.operand->as.integer == (uint64_t)INT64_MAX + 1)
+                return emit(emitter, "INT64_MIN");
+            return emit(emitter, "((%s)(-INT64_C(%llu)))", c_type(expr->type),
+                        (unsigned long long)expr->as.unary.operand->as.integer);
+        }
         return emit(emitter, "(%s", token_name(expr->as.unary.op)) &&
                emit_expr(emitter, expr->as.unary.operand) && emit(emitter, ")");
     case EXPR_BINARY:
         if (expr->as.binary.op == TOKEN_SLASH || expr->as.binary.op == TOKEN_PERCENT)
         {
-            const char *helper = expr->as.binary.op == TOKEN_SLASH ? "meg_div_i64" : "meg_rem_i64";
+            bool is_unsigned = is_unsigned_integer_type(expr->type);
+            const char *helper = expr->as.binary.op == TOKEN_SLASH
+                ? (is_unsigned ? "meg_div_u64" : "meg_div_i64")
+                : (is_unsigned ? "meg_rem_u64" : "meg_rem_i64");
             return emit(emitter, "%s(", helper) && emit_expr(emitter, expr->as.binary.left) &&
                    emit(emitter, ", ") && emit_expr(emitter, expr->as.binary.right) && emit(emitter, ")");
         }
@@ -148,7 +186,13 @@ bool codegen_c(FILE *out, const Program *program, DiagnosticSink diagnostics)
               "int64_t meg_rem_i64(int64_t a, int64_t b) {\n"
               "    if (b == 0 || (a == INT64_MIN && b == -1)) abort();\n"
               "    return a %% b;\n}\n\n"
-              "static int64_t meg_main(void) "))
+              "uint64_t meg_div_u64(uint64_t a, uint64_t b) {\n"
+              "    if (b == 0) abort();\n"
+              "    return a / b;\n}\n"
+              "uint64_t meg_rem_u64(uint64_t a, uint64_t b) {\n"
+              "    if (b == 0) abort();\n"
+              "    return a %% b;\n}\n\n"
+              "static %s meg_main(void) ", c_type(program->function.return_type)))
         return false;
     if (!emit_block(&emitter, program->function.body, 0))
         return false;

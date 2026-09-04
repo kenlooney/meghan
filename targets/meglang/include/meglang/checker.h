@@ -33,6 +33,7 @@ typedef struct Checker {
     DiagnosticSink diagnostics;
     Scope *scope;
     Symbol *allocated;
+    ValueType return_type;
     unsigned next_id;
     unsigned errors;
 } Checker;

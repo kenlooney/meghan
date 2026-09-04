@@ -64,6 +64,30 @@ static Token expect(Parser *parser, TokenKind kind, const char *message)
     return token;
 }
 
+static Token parse_type_name(Parser *parser)
+{
+    Token token = parser->current;
+    switch (token.kind)
+    {
+    case TOKEN_I8:
+    case TOKEN_I16:
+    case TOKEN_I32:
+    case TOKEN_I64:
+    case TOKEN_U8:
+    case TOKEN_U16:
+    case TOKEN_U32:
+    case TOKEN_U64:
+    case TOKEN_BOOL:
+        advance(parser);
+        break;
+    default:
+        error_at(parser, token.span,
+                 "expected integer type or 'bool'");
+        break;
+    }
+    return token;
+}
+
 static SourceSpan joined(SourceSpan first, SourceSpan last)
 {
     SourceSpan result = first;
@@ -101,7 +125,7 @@ static int digit_value(char c)
     return c - 'A' + 10;
 }
 
-static bool integer_value(Token token, int64_t *out)
+static bool integer_value(Token token, uint64_t *out)
 {
     const char *text = token.span.source->text + token.span.start;
     size_t i = 0;
@@ -125,11 +149,11 @@ static bool integer_value(Token token, int64_t *out)
         if (text[i] == '_')
             continue;
         digit = digit_value(text[i]);
-        if (value > ((uint64_t)INT64_MAX - (unsigned)digit) / base)
+        if (value > (UINT64_MAX - (unsigned)digit) / base)
             return false;
         value = value * base + (unsigned)digit;
     }
-    *out = (int64_t)value;
+    *out = value;
     return true;
 }
 
@@ -141,7 +165,7 @@ static Expr *parse_primary(Parser *parser)
     Expr *expr;
     if (token.kind == TOKEN_INTEGER)
     {
-        int64_t value = 0;
+        uint64_t value = 0;
         advance(parser);
         expr = new_expr(EXPR_INT, token.span);
         if (!integer_value(token, &value))
@@ -264,11 +288,7 @@ static Statement *parse_statement(Parser *parser)
         statement = new_statement(STMT_LET, start.span);
         name = expect(parser, TOKEN_IDENTIFIER, "expected variable name");
         expect(parser, TOKEN_COLON, "expected ':' after variable name");
-        type = parser->current;
-        if (type.kind == TOKEN_I64 || type.kind == TOKEN_BOOL)
-            advance(parser);
-        else
-            error_at(parser, type.span, "expected type 'i64' or 'bool'");
+        type = parse_type_name(parser);
         expect(parser, TOKEN_ASSIGN, "expected '=' after variable type");
         statement->as.let.name = name.span;
         statement->as.let.type_name = type.span;
@@ -370,7 +390,7 @@ ParseResult parse_source(const Source *source, DiagnosticSink diagnostics)
     expect(&parser, TOKEN_LPAREN, "expected '('");
     expect(&parser, TOKEN_RPAREN, "expected ')'");
     expect(&parser, TOKEN_ARROW, "expected '->'");
-    return_type = expect(&parser, TOKEN_I64, "expected return type 'i64'");
+    return_type = parse_type_name(&parser);
     program->function.return_type_name = return_type.span;
     program->function.body = parse_block(&parser);
     program->function.span = joined(name.span, program->function.body->span);

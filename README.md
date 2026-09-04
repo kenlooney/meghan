@@ -27,12 +27,11 @@ emits C code, JavaScript, or a readable AST representation.
   `while` and `for` loops, and expressions.
 - An AST for integer and boolean values, names, unary and binary expressions,
   and the supported statement forms.
-- Semantic checking for `i64` and `bool`, variable lookup, nested scopes,
-	assignments, conditions, operators, loop scopes, and guaranteed returns.
+- Semantic checking for `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`,
+	`u64`, and `bool`; variable lookup; nested scopes; assignments; conditions;
+	operators; loop scopes; literal ranges; and guaranteed returns.
 - C and JavaScript code generation for the currently supported expressions and
 	statements.
-- The `meg` command-line compiler, which reads a `.meg` source file and emits
-	C code, JavaScript, or an AST representation.
 - Automated tests for each pipeline stage, including code generation.
 
 ### Not Yet Supported
@@ -102,7 +101,7 @@ The command also supports `--emit ast` for a readable AST representation:
 ```
 
 Use `--emit js` to generate JavaScript. The generated program uses `BigInt`
-for Meghan `i64` values and can be run with Node.js:
+for Meghan integer values and can be run with Node.js:
 
 ```powershell
 .\bin\Debug\meg.exe --input answer.meg --emit js -o answer.js
@@ -121,19 +120,39 @@ usage: meg -i <source.meg> [-o output] [--emit c|js|ast]
 The lexer can recognize the current token vocabulary in source text such as:
 
 ```meg
-fn main() -> i64 {
-	let sum: i64 = 0;
-	for (let i: i64 = 0; i < 4; i = i + 1) {
+fn main() -> u64 {
+	let sum: u64 = 0;
+	for (let i: u8 = 0; i < 4; i = i + 1) {
 		sum = sum + i;
 	}
 	return sum;
 }
 ```
 
+## Integer Types and Checking
+
+Meghan currently supports the following fixed-width integer types:
+
+```text
+Signed:   i8  i16  i32  i64
+Unsigned: u8  u16  u32  u64
+```
+
+Integer literals are parsed as unsigned 64-bit values, including decimal,
+hexadecimal, and binary forms. During semantic checking, a literal must fit
+the type declared for an initializer or expected by an expression. A negative
+literal is permitted only for a signed integer type and is checked against its
+negative bound.
+
+Integer arithmetic, assignment, comparison, and return expressions require
+matching integer types. Meghan does not currently perform implicit integer
+conversions or support mixed-width arithmetic. Conditions and logical negation
+require `bool`.
+
 The currently recognized keywords are:
 
 ```text
-fn let return if else while for true false i64 bool
+fn let return if else while for true false i8 i16 i32 i64 u8 u16 u32 u64 bool
 ```
 
 The lexer recognizes these operators and punctuation:
@@ -235,8 +254,13 @@ if (!codegen_js(stdout, parsed.program, diagnostics))
 	return 1;
 ```
 
-`codegen_js` writes JavaScript using `BigInt` for `i64` values and preserves
-the checked symbol IDs and integer-operation checks used by the C backend.
+`codegen_c` maps Meghan integer types to the corresponding C fixed-width types
+from `<stdint.h>`. It emits helpers that reject division by zero and the
+signed 64-bit minimum-value division or remainder edge case.
+
+`codegen_js` writes JavaScript using `BigInt` for integer values. It narrows
+unsigned arithmetic to the declared width and reports signed arithmetic
+overflow. Values are normalized again when assigned, initialized, or returned.
 
 ## Testing
 
@@ -266,13 +290,13 @@ The test suite currently includes:
 - `smoke`: verifies the basic build and library connection.
 - `source_tests`: checks source ownership, spans, comparisons, and cleanup.
 - `lexer_tests`: checks keywords, identifiers, integers, comments, operators,
-  positions, and end-of-file handling.
+	positions, integer type keywords, and end-of-file handling.
 - `ast_tests`: checks AST construction, printing, and cleanup.
 - `parser_tests`: checks function, statement, and expression parsing.
-- `checker_tests`: checks valid programs, symbol resolution, and semantic
-	errors.
-- `pipeline_tests`: checks parsing, semantic checking, and C generation in
-  sequence.
+- `checker_tests`: checks valid programs, symbol resolution, integer literal
+	ranges, signed minimum values, unsigned types, and semantic errors.
+- `pipeline_tests`: checks parsing, semantic checking, and C and JavaScript
+	generation in sequence.
 - `for_loops`: checks valid and invalid `for` loop parsing, checking, and
 	scoping.
 - `cli_help`: verifies the command-line help path.

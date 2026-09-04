@@ -18,7 +18,12 @@
 
 #include <stdarg.h>
 
-typedef struct JsEmitter { FILE *out; DiagnosticSink diagnostics; bool failed; } JsEmitter;
+typedef struct JsEmitter {
+    FILE *out;
+    DiagnosticSink diagnostics;
+    ValueType return_type;
+    bool failed;
+} JsEmitter;
 
 static bool emit(JsEmitter *emitter, const char *format, ...)
 {
@@ -44,21 +49,93 @@ static const char *js_operator(TokenKind kind)
     return token_name(kind);
 }
 
+static bool is_unsigned_integer_type(ValueType type)
+{
+    return type == TYPE_U8 || type == TYPE_U16 ||
+           type == TYPE_U32 || type == TYPE_U64;
+}
+
+static bool is_signed_integer_type(ValueType type)
+{
+    return type == TYPE_I8 || type == TYPE_I16 ||
+           type == TYPE_I32 || type == TYPE_I64;
+}
+
+static unsigned integer_bits(ValueType type)
+{
+    switch (type) {
+    case TYPE_I8: case TYPE_U8: return 8;
+    case TYPE_I16: case TYPE_U16: return 16;
+    case TYPE_I32: case TYPE_U32: return 32;
+    case TYPE_I64: case TYPE_U64: return 64;
+    default: return 0;
+    }
+}
+
+static bool emit_expr(JsEmitter *emitter, const Expr *expr);
+
+static bool emit_integer_conversion_start(JsEmitter *emitter, ValueType type)
+{
+    if (is_signed_integer_type(type))
+        return emit(emitter, "meg_signed(%u, ", integer_bits(type));
+    if (is_unsigned_integer_type(type))
+        return emit(emitter, "meg_unsigned(%u, ", integer_bits(type));
+    return true;
+}
+
+static bool emit_integer_conversion_end(JsEmitter *emitter, ValueType type)
+{
+    if (is_signed_integer_type(type) || is_unsigned_integer_type(type))
+        return emit(emitter, ")");
+    return true;
+}
+
+static bool emit_typed_expr(JsEmitter *emitter, const Expr *expr, ValueType type)
+{
+    return emit_integer_conversion_start(emitter, type) &&
+           emit_expr(emitter, expr) &&
+           emit_integer_conversion_end(emitter, type);
+}
+
 static bool emit_expr(JsEmitter *emitter, const Expr *expr)
 {
     switch (expr->kind) {
-    case EXPR_INT: return emit(emitter, "%lldn", (long long)expr->as.integer);
+    case EXPR_INT: return emit(emitter, "%llun", (unsigned long long)expr->as.integer);
     case EXPR_BOOL: return emit(emitter, "%s", expr->as.boolean ? "true" : "false");
     case EXPR_NAME: return emit(emitter, "meg_v_%u", expr->symbol->id);
     case EXPR_UNARY:
+        if (expr->as.unary.op == TOKEN_MINUS && is_signed_integer_type(expr->type))
+            return emit_integer_conversion_start(emitter, expr->type) &&
+                   emit(emitter, "(-") && emit_expr(emitter, expr->as.unary.operand) &&
+                   emit(emitter, ")") && emit_integer_conversion_end(emitter, expr->type);
         return emit(emitter, "(%s", token_name(expr->as.unary.op)) &&
                emit_expr(emitter, expr->as.unary.operand) && emit(emitter, ")");
     case EXPR_BINARY:
+        if (expr->as.binary.op == TOKEN_ASSIGN)
+            return emit(emitter, "(") && emit_expr(emitter, expr->as.binary.left) &&
+                   emit(emitter, " = ") &&
+                   emit_typed_expr(emitter, expr->as.binary.right,
+                                   expr->as.binary.left->type) &&
+                   emit(emitter, ")");
         if (expr->as.binary.op == TOKEN_SLASH || expr->as.binary.op == TOKEN_PERCENT) {
-            const char *helper = expr->as.binary.op == TOKEN_SLASH ? "meg_div_i64" : "meg_rem_i64";
-            return emit(emitter, "%s(", helper) && emit_expr(emitter, expr->as.binary.left) &&
-                   emit(emitter, ", ") && emit_expr(emitter, expr->as.binary.right) && emit(emitter, ")");
+            bool is_unsigned = is_unsigned_integer_type(expr->type);
+            const char *helper = expr->as.binary.op == TOKEN_SLASH
+                ? (is_unsigned ? "meg_div_unsigned" : "meg_div_signed")
+                : (is_unsigned ? "meg_rem_unsigned" : "meg_rem_signed");
+            return emit_integer_conversion_start(emitter, expr->type) &&
+                   emit(emitter, "%s(", helper) &&
+                   (!is_unsigned ? emit(emitter, "%u, ", integer_bits(expr->type)) : true) &&
+                   emit_expr(emitter, expr->as.binary.left) && emit(emitter, ", ") &&
+                   emit_expr(emitter, expr->as.binary.right) && emit(emitter, ")") &&
+                   emit_integer_conversion_end(emitter, expr->type);
         }
+        if (expr->as.binary.op == TOKEN_PLUS || expr->as.binary.op == TOKEN_MINUS ||
+            expr->as.binary.op == TOKEN_STAR)
+            return emit_integer_conversion_start(emitter, expr->type) &&
+                   emit(emitter, "(") && emit_expr(emitter, expr->as.binary.left) &&
+                   emit(emitter, " %s ", js_operator(expr->as.binary.op)) &&
+                   emit_expr(emitter, expr->as.binary.right) && emit(emitter, ")") &&
+                   emit_integer_conversion_end(emitter, expr->type);
         return emit(emitter, "(") && emit_expr(emitter, expr->as.binary.left) &&
                emit(emitter, " %s ", js_operator(expr->as.binary.op)) &&
                emit_expr(emitter, expr->as.binary.right) && emit(emitter, ")");
@@ -84,10 +161,12 @@ static bool emit_statements(JsEmitter *emitter, const Statement *statement, unsi
         switch (statement->kind) {
         case STMT_LET:
             if (!emit(emitter, "let meg_v_%u = ", statement->as.let.symbol->id) ||
-                !emit_expr(emitter, statement->as.let.value) || !emit(emitter, ";\n")) return false;
+                !emit_typed_expr(emitter, statement->as.let.value, statement->as.let.type) ||
+                !emit(emitter, ";\n")) return false;
             break;
         case STMT_RETURN:
-            if (!emit(emitter, "return ") || !emit_expr(emitter, statement->as.expression) ||
+            if (!emit(emitter, "return ") ||
+                !emit_typed_expr(emitter, statement->as.expression, emitter->return_type) ||
                 !emit(emitter, ";\n")) return false;
             break;
         case STMT_EXPR:
@@ -111,7 +190,8 @@ static bool emit_statements(JsEmitter *emitter, const Statement *statement, unsi
         case STMT_FOR: {
             const Statement *initializer = statement->as.iteration.initializer;
             if (!emit(emitter, "for (let meg_v_%u = ", initializer->as.let.symbol->id) ||
-                !emit_expr(emitter, initializer->as.let.value) || !emit(emitter, "; ") ||
+                !emit_typed_expr(emitter, initializer->as.let.value,
+                                 initializer->as.let.type) || !emit(emitter, "; ") ||
                 !emit_expr(emitter, statement->as.iteration.condition) || !emit(emitter, "; ") ||
                 !emit_expr(emitter, statement->as.iteration.step) || !emit(emitter, ") ") ||
                 !emit_block(emitter, statement->as.iteration.body, depth) ||
@@ -125,15 +205,29 @@ static bool emit_statements(JsEmitter *emitter, const Statement *statement, unsi
 
 bool codegen_js(FILE *out, const Program *program, DiagnosticSink diagnostics)
 {
-    JsEmitter emitter = {out, diagnostics, false};
+    JsEmitter emitter = {out, diagnostics, program ? program->function.return_type : TYPE_ERROR, false};
     if (!out || !program) return false;
     if (!emit(&emitter,
         "\"use strict\";\n\n"
-        "function meg_div_i64(a, b) {\n"
-        "    if (b === 0n || (a === -9223372036854775808n && b === -1n)) throw new RangeError(\"invalid i64 division\");\n"
+        "function meg_signed(bits, value) {\n"
+        "    const narrowed = BigInt.asIntN(bits, value);\n"
+        "    if (narrowed !== value) throw new RangeError(\"signed integer overflow\");\n"
+        "    return value;\n}\n"
+        "function meg_unsigned(bits, value) {\n"
+        "    return BigInt.asUintN(bits, value);\n}\n"
+        "function meg_div_signed(bits, a, b) {\n"
+        "    const minimum = -(1n << BigInt(bits - 1));\n"
+        "    if (b === 0n || (a === minimum && b === -1n)) throw new RangeError(\"invalid signed division\");\n"
         "    return a / b;\n}\n"
-        "function meg_rem_i64(a, b) {\n"
-        "    if (b === 0n || (a === -9223372036854775808n && b === -1n)) throw new RangeError(\"invalid i64 remainder\");\n"
+        "function meg_rem_signed(bits, a, b) {\n"
+        "    const minimum = -(1n << BigInt(bits - 1));\n"
+        "    if (b === 0n || (a === minimum && b === -1n)) throw new RangeError(\"invalid signed remainder\");\n"
+        "    return a %% b;\n}\n\n"
+        "function meg_div_unsigned(a, b) {\n"
+        "    if (b === 0n) throw new RangeError(\"invalid unsigned division\");\n"
+        "    return a / b;\n}\n"
+        "function meg_rem_unsigned(a, b) {\n"
+        "    if (b === 0n) throw new RangeError(\"invalid unsigned remainder\");\n"
         "    return a %% b;\n}\n\n"
         "function meg_main() ")) return false;
     if (!emit_block(&emitter, program->function.body, 0)) return false;
