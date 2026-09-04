@@ -57,7 +57,9 @@ static const char *const token_names[TOKEN_KIND_COUNT] = {
     [TOKEN_LESS_EQUAL] = "<=", 
     [TOKEN_GREATER] = ">", 
     [TOKEN_GREATER_EQUAL] = ">=", 
-    [TOKEN_ARROW] = "->"
+    [TOKEN_ARROW] = "->",
+    [TOKEN_REF] = "ref",
+    [TOKEN_AMPERSAND] = "&",
 };
 
 const char *token_name(TokenKind kind)
@@ -164,6 +166,7 @@ static TokenKind keyword_kind(SourceSpan span)
         {"u16", TOKEN_U16},
         {"u32", TOKEN_U32},
         {"u64", TOKEN_U64},
+        {"ref", TOKEN_REF},
         {"bool", TOKEN_BOOL}};
     size_t i;
     for (i = 0; i < sizeof keywords / sizeof keywords[0]; ++i)
@@ -316,6 +319,7 @@ Token lexer_next(Lexer *lexer)
         ONE('*', TOKEN_STAR);
         ONE('/', TOKEN_SLASH);
         ONE('%', TOKEN_PERCENT);
+        ONE('&', TOKEN_AMPERSAND);
     case '-':
         if (peek(lexer) == '>')
         {
