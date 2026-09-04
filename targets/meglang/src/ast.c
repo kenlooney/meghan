@@ -96,7 +96,7 @@ static bool print_expr(FILE *out, const Expr *expr)
     switch (expr->kind)
     {
     case EXPR_INT:
-        return fprintf(out, "%lld", (long long)expr->as.integer) >= 0;
+        return fprintf(out, "%llu", (unsigned long long)expr->as.integer) >= 0;
     case EXPR_BOOL:
         return put(out, expr->as.boolean ? "true" : "false");
     case EXPR_NAME:

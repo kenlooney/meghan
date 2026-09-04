@@ -13,7 +13,9 @@
 // limitations under the License.
 
 #include <meglang/checker.h>
+#include <stdbool.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -22,7 +24,14 @@ struct Scope { Scope *parent; Symbol *symbols; };
 const char *value_type_name(ValueType type)
 {
     switch (type) {
+    case TYPE_I8: return "i8";
+    case TYPE_I16: return "i16";
+    case TYPE_I32: return "i32";
     case TYPE_I64: return "i64";
+    case TYPE_U8: return "u8";
+    case TYPE_U16: return "u16";
+    case TYPE_U32: return "u32";
+    case TYPE_U64: return "u64";
     case TYPE_BOOL: return "bool";
     default: return "<error>";
     }
@@ -71,13 +80,78 @@ static Symbol *define(Checker *checker, SourceSpan name, ValueType type)
     return symbol;
 }
 
-static ValueType check_expr(Checker *checker, Expr *expr, bool allow_assignment)
+static ValueType written_type(SourceSpan span)
+{
+    if (span_equals(span, "i8")) return TYPE_I8;
+    if (span_equals(span, "i16")) return TYPE_I16;
+    if (span_equals(span, "i32")) return TYPE_I32;
+    if (span_equals(span, "i64")) return TYPE_I64;
+    if (span_equals(span, "u8")) return TYPE_U8;
+    if (span_equals(span, "u16")) return TYPE_U16;
+    if (span_equals(span, "u32")) return TYPE_U32;
+    if (span_equals(span, "u64")) return TYPE_U64;
+    if (span_equals(span, "bool")) return TYPE_BOOL;
+    return TYPE_ERROR;
+}
+static bool is_signed_integer_type(ValueType type)
+{
+    return type == TYPE_I8 || type == TYPE_I16 ||
+           type == TYPE_I32 || type == TYPE_I64;
+}
+
+static bool is_unsigned_integer_type(ValueType type)
+{
+    return type == TYPE_U8 || type == TYPE_U16 ||
+           type == TYPE_U32 || type == TYPE_U64;
+}
+
+static bool is_integer_type(ValueType type)
+{
+    return is_signed_integer_type(type) || is_unsigned_integer_type(type);
+}
+
+static bool integer_fits_type(uint64_t value, ValueType type) {
+    switch (type) {
+        case TYPE_I8: return value <= INT8_MAX;
+        case TYPE_I16: return value <= INT16_MAX;
+        case TYPE_I32: return value <= INT32_MAX;
+        case TYPE_I64: return value <= INT64_MAX;
+        case TYPE_U8: return value <= UINT8_MAX;
+        case TYPE_U16: return value <= UINT16_MAX;
+        case TYPE_U32: return value <= UINT32_MAX;
+        case TYPE_U64: return true;
+        default: return false;
+    }
+}
+
+static bool negative_integer_fits_type(uint64_t magnitude, ValueType type)
+{
+    switch (type) {
+    case TYPE_I8: return magnitude <= (uint64_t)INT8_MAX + 1;
+    case TYPE_I16: return magnitude <= (uint64_t)INT16_MAX + 1;
+    case TYPE_I32: return magnitude <= (uint64_t)INT32_MAX + 1;
+    case TYPE_I64: return magnitude <= (uint64_t)INT64_MAX + 1;
+    default: return false;
+    }
+}
+
+static ValueType check_expr(Checker *checker, Expr *expr, ValueType expected, bool allow_assignment)
 {
     ValueType left, right;
     Symbol *symbol;
     if (!expr) return TYPE_ERROR;
     switch (expr->kind) {
-    case EXPR_INT: return expr->type = TYPE_I64;
+    case EXPR_INT:
+    {
+        ValueType type = is_integer_type(expected)
+            ? expected
+            : (expr->as.integer <= INT64_MAX ? TYPE_I64 : TYPE_U64);
+        if(!integer_fits_type(expr->as.integer, type)) {
+            report(checker, expr->span, "integer literal does not fit in the expected type");
+            return expr->type = TYPE_ERROR;
+        }
+        return expr->type = type;
+    }
     case EXPR_BOOL: return expr->type = TYPE_BOOL;
     case EXPR_NAME:
         symbol = find(checker, expr->as.name);
@@ -85,12 +159,25 @@ static ValueType check_expr(Checker *checker, Expr *expr, bool allow_assignment)
         expr->symbol = symbol;
         return expr->type = symbol->type;
     case EXPR_UNARY:
-        left = check_expr(checker, expr->as.unary.operand, false);
-        if (left == TYPE_ERROR) return expr->type = TYPE_ERROR;
         if (expr->as.unary.op == TOKEN_MINUS) {
-            if (left != TYPE_I64) { report(checker, expr->span, "unary '-' requires i64"); return expr->type = TYPE_ERROR; }
-            return expr->type = TYPE_I64;
+            if (expr->as.unary.operand->kind == EXPR_INT &&
+                is_signed_integer_type(expected)) {
+                if (!negative_integer_fits_type(
+                        expr->as.unary.operand->as.integer, expected)) {
+                    report(checker, expr->span,
+                           "negative integer literal does not fit in the expected type");
+                    return expr->type = TYPE_ERROR;
+                }
+                expr->as.unary.operand->type = expected;
+                return expr->type = expected;
+            }
+            left = check_expr(checker, expr->as.unary.operand, expected, false);
+            if (left == TYPE_ERROR) return expr->type = TYPE_ERROR;
+            if (!is_signed_integer_type(left)) { report(checker, expr->span, "unary '-' requires a signed integer"); return expr->type = TYPE_ERROR; }
+            return expr->type = left;
         }
+        left = check_expr(checker, expr->as.unary.operand, TYPE_BOOL, false);
+        if (left == TYPE_ERROR) return expr->type = TYPE_ERROR;
         if (left != TYPE_BOOL) { report(checker, expr->span, "unary '!' requires bool"); return expr->type = TYPE_ERROR; }
         return expr->type = TYPE_BOOL;
     case EXPR_BINARY:
@@ -99,28 +186,54 @@ static ValueType check_expr(Checker *checker, Expr *expr, bool allow_assignment)
                 report(checker, expr->span, "assignment is only allowed as a statement");
                 return expr->type = TYPE_ERROR;
             }
-            right = check_expr(checker, expr->as.binary.right, false);
             if (expr->as.binary.left->kind != EXPR_NAME) {
-                check_expr(checker, expr->as.binary.left, false);
+                check_expr(checker, expr->as.binary.left, TYPE_ERROR, false);
                 report(checker, expr->as.binary.left->span, "assignment target must be a variable");
                 return expr->type = TYPE_ERROR;
             }
-            left = check_expr(checker, expr->as.binary.left, false);
+            left = check_expr(checker, expr->as.binary.left, TYPE_ERROR, false);
+            right = check_expr(checker, expr->as.binary.right, left, false);
             if (left == TYPE_ERROR || right == TYPE_ERROR) return expr->type = TYPE_ERROR;
             if (left != right) { report(checker, expr->span, "assignment types do not match"); return expr->type = TYPE_ERROR; }
             return expr->type = left;
         }
-        left = check_expr(checker, expr->as.binary.left, false);
-        right = check_expr(checker, expr->as.binary.right, false);
-        if (left == TYPE_ERROR || right == TYPE_ERROR) return expr->type = TYPE_ERROR;
         switch (expr->as.binary.op) {
-        case TOKEN_PLUS: case TOKEN_MINUS: case TOKEN_STAR: case TOKEN_SLASH: case TOKEN_PERCENT:
-            if (left != TYPE_I64 || right != TYPE_I64) { report(checker, expr->span, "arithmetic requires i64 operands"); return expr->type = TYPE_ERROR; }
-            return expr->type = TYPE_I64;
+        case TOKEN_PLUS:
+        case TOKEN_MINUS:
+        case TOKEN_STAR:
+        case TOKEN_SLASH:
+        case TOKEN_PERCENT:
+            left = check_expr(
+                checker,
+                expr->as.binary.left,
+                expected,
+                false);
+            right = check_expr(
+                checker,
+                expr->as.binary.right,
+                expected,
+                false);
+            if (left == TYPE_ERROR || right == TYPE_ERROR)
+                return expr->type = TYPE_ERROR;
+            if (!is_integer_type(left) || !is_integer_type(right)) {
+                report(checker, expr->span, "arithmetic operators require integer operands");
+                return expr->type = TYPE_ERROR;
+            }
+            if (left != right) {
+                report(checker, expr->span, "arithmetic operands must have the same type");
+                return expr->type = TYPE_ERROR;
+            }
+            return expr->type = left;
         case TOKEN_LESS: case TOKEN_LESS_EQUAL: case TOKEN_GREATER: case TOKEN_GREATER_EQUAL:
-            if (left != TYPE_I64 || right != TYPE_I64) { report(checker, expr->span, "comparison requires i64 operands"); return expr->type = TYPE_ERROR; }
+            left = check_expr(checker, expr->as.binary.left, TYPE_ERROR, false);
+            right = check_expr(checker, expr->as.binary.right, left, false);
+            if (left == TYPE_ERROR || right == TYPE_ERROR) return expr->type = TYPE_ERROR;
+            if (!is_integer_type(left) || left != right) { report(checker, expr->span, "comparison requires matching integer operands"); return expr->type = TYPE_ERROR; }
             return expr->type = TYPE_BOOL;
         case TOKEN_EQUAL: case TOKEN_NOT_EQUAL:
+            left = check_expr(checker, expr->as.binary.left, TYPE_ERROR, false);
+            right = check_expr(checker, expr->as.binary.right, left, false);
+            if (left == TYPE_ERROR || right == TYPE_ERROR) return expr->type = TYPE_ERROR;
             if (left != right) { report(checker, expr->span, "equality operands must have the same type"); return expr->type = TYPE_ERROR; }
             return expr->type = TYPE_BOOL;
         default: report(checker, expr->span, "invalid binary operator"); return expr->type = TYPE_ERROR;
@@ -129,12 +242,6 @@ static ValueType check_expr(Checker *checker, Expr *expr, bool allow_assignment)
     return TYPE_ERROR;
 }
 
-static ValueType written_type(SourceSpan span)
-{
-    if (span_equals(span, "i64")) return TYPE_I64;
-    if (span_equals(span, "bool")) return TYPE_BOOL;
-    return TYPE_ERROR;
-}
 
 static void check_statements(Checker *checker, Statement *statement);
 static void check_block(Checker *checker, Statement *block);
@@ -145,11 +252,11 @@ static void check_for(Checker *checker, Statement *statement)
     ValueType condition;
     checker->scope = &loop_scope;
     check_statements(checker, statement->as.iteration.initializer);
-    condition = check_expr(checker, statement->as.iteration.condition, false);
+    condition = check_expr(checker, statement->as.iteration.condition, TYPE_BOOL, false);
     if (condition != TYPE_ERROR && condition != TYPE_BOOL)
         report(checker, statement->as.iteration.condition->span,
                "for condition must be bool");
-    (void)check_expr(checker, statement->as.iteration.step, true);
+    (void)check_expr(checker, statement->as.iteration.step, TYPE_ERROR, true);
     check_block(checker, statement->as.iteration.body);
     checker->scope = loop_scope.parent;
 }
@@ -169,27 +276,36 @@ static void check_statements(Checker *checker, Statement *statement)
         switch (statement->kind) {
         case STMT_LET:
             statement->as.let.type = written_type(statement->as.let.type_name);
-            got = check_expr(checker, statement->as.let.value, false);
+            got = check_expr(
+                checker,
+                statement->as.let.value,
+                statement->as.let.type,
+                false);
+
             if (got != TYPE_ERROR && got != statement->as.let.type)
                 report(checker, statement->span, "initializer type does not match variable type");
-            statement->as.let.symbol = define(checker, statement->as.let.name, statement->as.let.type);
+            statement->as.let.symbol = define(
+                checker,
+                statement->as.let.name,
+                statement->as.let.type);
+
             break;
         case STMT_RETURN:
-            got = check_expr(checker, statement->as.expression, false);
-            if (got != TYPE_ERROR && got != TYPE_I64)
-                report(checker, statement->span, "main must return i64");
+            got = check_expr(checker, statement->as.expression, checker->return_type, false);
+            if (got != TYPE_ERROR && got != checker->return_type)
+                report(checker, statement->span, "return type does not match function return type");
             break;
-        case STMT_EXPR: (void)check_expr(checker, statement->as.expression, true); break;
+        case STMT_EXPR: (void)check_expr(checker, statement->as.expression, TYPE_ERROR, true); break;
         case STMT_BLOCK: check_block(checker, statement); break;
         case STMT_FOR: check_for(checker, statement); break;
         case STMT_IF:
-            got = check_expr(checker, statement->as.branch.condition, false);
+            got = check_expr(checker, statement->as.branch.condition, TYPE_BOOL, false);
             if (got != TYPE_ERROR && got != TYPE_BOOL) report(checker, statement->as.branch.condition->span, "if condition must be bool");
             check_block(checker, statement->as.branch.then_branch);
             if (statement->as.branch.else_branch) check_block(checker, statement->as.branch.else_branch);
             break;
         case STMT_WHILE:
-            got = check_expr(checker, statement->as.loop.condition, false);
+            got = check_expr(checker, statement->as.loop.condition, TYPE_BOOL, false);
             if (got != TYPE_ERROR && got != TYPE_BOOL) report(checker, statement->as.loop.condition->span, "while condition must be bool");
             check_block(checker, statement->as.loop.body);
             break;
@@ -218,6 +334,8 @@ void checker_init(Checker *checker, DiagnosticSink diagnostics)
 bool checker_check(Checker *checker, Program *program)
 {
     Scope root = {NULL, NULL};
+    checker->return_type = written_type(program->function.return_type_name);
+    program->function.return_type = checker->return_type;
     checker->scope = &root;
     check_block(checker, program->function.body);
     if (!guarantees_return(program->function.body))
