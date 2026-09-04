@@ -61,6 +61,10 @@ const char *value_type_name(ValueType type)
         return "u64";
     case TYPE_BOOL:
         return "bool";
+    case TYPE_STRING:
+        return "string";
+    case TYPE_USTRING:
+        return "ustring";
     default:
         return "<error>";
     }
@@ -255,6 +259,13 @@ static Type check_expr(Checker *checker, Expr *expr, Type expected, bool allow_a
         return error_type();
     switch (expr->kind)
     {
+    
+    case EXPR_STRING:
+    return expr->type = value_type(
+        expr->as.string.encoding == STRING_UTF16
+        ? TYPE_USTRING
+        : TYPE_STRING);
+    break;
     case EXPR_INT:
     {
         Type type = is_integer_type(expected)

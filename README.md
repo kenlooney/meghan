@@ -29,11 +29,12 @@ AST representation.
 - Parsing multiple functions with typed parameters, blocks, declarations,
 	returns, conditionals, `while` and `for` loops, expressions, and calls.
 - An AST for functions, parameters, call arguments, integer and boolean values,
-  names, unary and binary expressions, and the supported statement forms.
+	string literals, names, unary and binary expressions, and the supported
+	statement forms.
 - Semantic checking for `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`,
 	`u64`, and `bool`; variable lookup; nested scopes; assignments; conditions;
-	operators; loop and parameter scopes; call arity and argument types; literal
-	ranges; and guaranteed returns.
+	operators; loop and parameter scopes; call arity and argument types; string
+	expression types; literal ranges; and guaranteed returns.
 - C and JavaScript code generation for typed function signatures, calls, and
 	the currently supported expressions and statements.
 - Freestanding-compatible C output with a `meg_entry` entry point and an
@@ -150,10 +151,16 @@ escaped quotes and validates the UTF-8 byte sequence in prefixed strings.
 Malformed UTF-8, non-ASCII bytes in an unprefixed string, and unterminated
 strings produce diagnostics and error tokens.
 
-String literals are currently recognized at the lexer level only. They are not
-yet represented in the AST, checked by the semantic analyzer, or emitted by
-the C and JavaScript generators. Character and UTF-16 character token kinds are
-reserved for future language work but are not emitted by the current scanner.
+String literals now continue through the parser into `EXPR_STRING` AST nodes and
+the semantic checker. Ordinary and UTF-8 strings receive `TYPE_STRING`, while
+UTF-16 strings receive `TYPE_USTRING`. The AST keeps the original source span,
+so the printer can reproduce the literal without allocating decoded storage.
+
+Strings are not integer values, so expressions such as `"hello" + 1` are
+rejected by the checker. Declared `string` and `ustring` variables, string
+initializers, and C or JavaScript string generation are not supported yet.
+Character and UTF-16 character token kinds are reserved for future language
+work but are not emitted by the current scanner.
 
 ## Quick Start
 
@@ -426,7 +433,8 @@ The test suite currently includes:
 - `ast_tests`: checks AST construction, printing, and cleanup.
 - `parser_tests`: checks function, statement, and expression parsing.
 - `checker_tests`: checks valid programs, symbol resolution, integer literal
-	ranges, signed minimum values, unsigned types, and semantic errors.
+	ranges, signed minimum values, unsigned types, string expression types,
+	integer-only arithmetic, and semantic errors.
 - `pipeline_tests`: checks parsing, semantic checking, and C and JavaScript
 	generation in sequence.
 - `for_loops`: checks valid and invalid `for` loop parsing, checking, and
