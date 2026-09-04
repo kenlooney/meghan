@@ -24,19 +24,20 @@ AST representation.
   whitespace, and comments.
 - Decimal, hexadecimal (`0x`), and binary (`0b`) integer literals.
 - Line comments (`//`) and block comments (`/* ... */`).
-- Parsing multiple functions with blocks, declarations, returns, conditionals,
-	`while` and `for` loops, expressions, and no-argument calls.
-- An AST for integer and boolean values, names, unary and binary expressions,
-  and the supported statement forms.
+- Parsing multiple functions with typed parameters, blocks, declarations,
+	returns, conditionals, `while` and `for` loops, expressions, and calls.
+- An AST for functions, parameters, call arguments, integer and boolean values,
+  names, unary and binary expressions, and the supported statement forms.
 - Semantic checking for `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`,
 	`u64`, and `bool`; variable lookup; nested scopes; assignments; conditions;
-	operators; loop scopes; literal ranges; and guaranteed returns.
-- C and JavaScript code generation for the currently supported expressions and
-	statements.
+	operators; loop and parameter scopes; call arity and argument types; literal
+	ranges; and guaranteed returns.
+- C and JavaScript code generation for typed function signatures, calls, and
+	the currently supported expressions and statements.
 - Freestanding-compatible C output with a `meg_entry` entry point and an
 	external `meg_panic` trap hook.
-- Function symbol resolution, forward calls, boolean return types, and
-	return types for all supported signed and unsigned integer widths.
+- Function symbol resolution, forward calls, typed arguments, boolean return
+	types, and all supported signed and unsigned integer widths.
 - Automated tests for each pipeline stage, including code generation.
 
 ## Pointers and References
@@ -93,38 +94,43 @@ Meghan backends remain a long-term goal.
 
 ## Functions and Calls
 
-Meghan programs can contain multiple no-argument functions. Each function has
-its own return type and body, and a function can call another function even if
-that function is declared later in the source:
+Meghan programs can contain multiple functions with typed parameters. Each
+function has its own return type and body, and a function can call another
+function even if that function is declared later in the source:
 
 ```meg
 fn main() -> i64 {
-	return answer();
+	return add(40, 2);
 }
 
-fn answer() -> i64 {
-	return forty() + 2;
-}
-
-fn forty() -> i64 {
-	return 40;
+fn add(left: i64, right: i64) -> i64 {
+	return left + right;
 }
 ```
 
 The semantic checker collects function declarations before checking their
 bodies. It resolves calls, rejects unknown or duplicate functions, and checks
-that a call's return type is valid wherever the call is used. Boolean-returning
-functions can be used as conditions, and function return types preserve all
-supported signed and unsigned integer widths.
+argument counts and types. Parameters support value, pointer, and reference
+types. Boolean-returning functions can be used as conditions, and function
+types preserve all supported signed and unsigned integer widths.
+
+Arguments must exactly match their declared parameter types. Meghan does not
+currently perform implicit integer widening, narrowing, or signedness
+conversion at a call boundary. Parameter names share the function body's outer
+scope, so duplicate parameter names and conflicting variable declarations at
+the top of that body are rejected.
 
 The C generator emits internal names such as `meg_main` and `meg_f_1`, while
 the JavaScript generator emits corresponding generated functions. Hosted C
 still receives a normal `main` wrapper, and freestanding-compatible C retains
 its platform-facing entry-point contract.
 
-Function parameters and arguments are not supported yet. Calls currently take
-no arguments, so the next function milestone will need parameter scopes,
-argument type checking, and target-language calling conventions.
+The `main` entry function does not accept parameters yet. Hosted C can provide
+an argument count and argument strings, but Meghan does not yet have the string,
+slice, or nested-pointer types needed to expose that interface.
+
+See [`examples/parameters.meg`](examples/parameters.meg) for value and pointer
+parameters used in a complete program.
 
 ## Quick Start
 
@@ -247,7 +253,7 @@ fn let return if else while for true false ref i8 i16 i32 i64 u8 u16 u32 u64 boo
 The lexer recognizes these operators and punctuation:
 
 ```text
-( ) { } : ; + - * / % ! & = == != < <= > >= ->
+( ) { } : , ; + - * / % ! & = == != < <= > >= ->
 ```
 
 Integer literal examples include:
@@ -407,6 +413,8 @@ The test suite currently includes:
 	assignment, and C and JavaScript generation.
 - `function_tests`: checks multiple functions, forward calls, return types,
 	unknown-function errors, and C and JavaScript generation.
+- `parameter_tests`: checks value, pointer, and reference parameters; argument
+	counts and types; parameter scopes; AST output; and both generators.
 - `cli_help`: verifies the command-line help path.
 
 ## Developer Guide
@@ -431,10 +439,9 @@ freestanding-compatible C exposes `meg_entry` and an external `meg_panic` hook.
 Both C modes use internal symbol IDs for generated variable names and helper
 functions that reject invalid signed division or remainder. Future work
 includes invoking target-language compilers, adding platform startup code, and
-building native backends. Functions currently have no parameters or arguments,
-and pointer and reference support operates on typed local values. Future work
-must preserve source-span, type, symbol, and diagnostic information as these
-models grow.
+building native backends. Pointer and reference support operates on typed local
+values and parameters. Future work must preserve source-span, type, symbol, and
+diagnostic information as these models grow.
 
 ## License
 

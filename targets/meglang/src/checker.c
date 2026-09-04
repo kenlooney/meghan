@@ -103,6 +103,7 @@ static FunctionSymbol *define_function(Checker *checker, Function *function)
     }
     symbol->name = function->name;
     symbol->return_type = value_type(function->return_type);
+    symbol->declaration = function;
     symbol->id = checker->next_function_id++;
     symbol->next = checker->functions;
     checker->functions = symbol;
@@ -280,12 +281,36 @@ static Type check_expr(Checker *checker, Expr *expr, Type expected, bool allow_a
     case EXPR_CALL:
     {
         FunctionSymbol *function = find_function(checker, expr->as.call.name);
+        Argument *argument = expr->as.call.arguments;
+        const Parameter *parameter;
         if (!function)
         {
+            for (; argument; argument = argument->next)
+                (void)check_expr(checker, argument->value, error_type(), false);
             report(checker, expr->span, "unknown function");
             return expr->type = error_type();
         }
         expr->as.call.symbol = function;
+        parameter = function->declaration->parameters;
+        while (argument && parameter)
+        {
+            Type got = check_expr(checker, argument->value, parameter->type, false);
+            if (!is_error(got) && !same_type(got, parameter->type))
+                report(checker, argument->value->span,
+                       "argument type does not match parameter type");
+            argument = argument->next;
+            parameter = parameter->next;
+        }
+        if (argument)
+        {
+            report(checker, expr->span, "too many arguments in function call");
+            for (; argument; argument = argument->next)
+                (void)check_expr(checker, argument->value, error_type(), false);
+        }
+        else if (parameter)
+        {
+            report(checker, expr->span, "too few arguments in function call");
+        }
         return expr->type = function->return_type;
     }
     case EXPR_UNARY:
@@ -588,7 +613,17 @@ bool checker_check(Checker *checker, Program *program)
     SourceSpan program_span = {program->source, 0, 0, 1, 1};
     for (function = program->functions; function; function = function->next)
     {
+        Parameter *parameter;
         function->return_type = written_type(function->return_type_name);
+        for (parameter = function->parameters; parameter; parameter = parameter->next)
+        {
+            TypeForm form = TYPE_VALUE;
+            if (parameter->type_modifier == TOKEN_STAR)
+                form = TYPE_POINTER;
+            if (parameter->type_modifier == TOKEN_REF)
+                form = TYPE_REFERENCE;
+            parameter->type = make_type(written_type(parameter->type_name), form);
+        }
         function->symbol = define_function(checker, function);
         if (span_equals(function->name, "main"))
         {
@@ -596,18 +631,26 @@ bool checker_check(Checker *checker, Program *program)
                 report(checker, function->name, "duplicate main function");
             else
                 main_symbol = (FunctionSymbol *)function->symbol;
+            if (function->parameters)
+                report(checker, function->parameters->span,
+                       "main must not declare parameters");
         }
     }
     if (!main_symbol)
         report(checker, program_span, "program must define main");
     for (function = program->functions; function; function = function->next)
     {
+        Scope function_scope = {NULL, NULL};
+        Parameter *parameter;
         checker->return_type = function->return_type;
-        checker->scope = NULL;
-        check_block(checker, function->body);
+        checker->scope = &function_scope;
+        for (parameter = function->parameters; parameter; parameter = parameter->next)
+            parameter->symbol = define(checker, parameter->name, parameter->type);
+        check_statements(checker, function->body->as.block.items);
         if (!guarantees_return(function->body))
             report(checker, function->span,
                    "function may reach the end without returning");
+        checker->scope = NULL;
     }
     checker->scope = NULL;
     checker->return_type = TYPE_ERROR;

@@ -45,6 +45,7 @@ typedef enum TokenKind {
     TOKEN_LBRACE,
     TOKEN_RBRACE,
     TOKEN_COLON,
+    TOKEN_COMMA,
     TOKEN_SEMICOLON,
     TOKEN_PLUS,
     TOKEN_MINUS,

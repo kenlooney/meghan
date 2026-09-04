@@ -43,6 +43,7 @@ static const char *const token_names[TOKEN_KIND_COUNT] = {
     [TOKEN_LBRACE] = "{", 
     [TOKEN_RBRACE] = "}", 
     [TOKEN_COLON] = ":", 
+    [TOKEN_COMMA] = ",",
     [TOKEN_SEMICOLON] = ";", 
     [TOKEN_PLUS] = "+", 
     [TOKEN_MINUS] = "-", 
@@ -314,6 +315,7 @@ Token lexer_next(Lexer *lexer)
         ONE('{', TOKEN_LBRACE);
         ONE('}', TOKEN_RBRACE);
         ONE(':', TOKEN_COLON);
+        ONE(',', TOKEN_COMMA);
         ONE(';', TOKEN_SEMICOLON);
         ONE('+', TOKEN_PLUS);
         ONE('*', TOKEN_STAR);
