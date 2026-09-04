@@ -88,12 +88,28 @@ static bool same_name(SourceSpan left, SourceSpan right)
            memcmp(left.source->text + left.start,
                   right.source->text + right.start, left.length) == 0;
 }
-static FunctionSymbol *find_function(Checker *checker, SourceSpan name)
+static FunctionSymbol *find_function_in_source(Checker *checker, SourceSpan name,
+                                               const Source *source)
 {
     FunctionSymbol *symbol;
     for (symbol = checker->functions; symbol; symbol = symbol->next)
-        if (same_name(symbol->name, name))
+        if (symbol->name.source == source && same_name(symbol->name, name))
             return symbol;
+    return NULL;
+}
+
+static FunctionSymbol *find_function(Checker *checker, SourceSpan name)
+{
+    return find_function_in_source(checker, name, name.source);
+}
+
+static const Import *find_import(Checker *checker, SourceSpan alias)
+{
+    const Import *import;
+    for (import = checker->program->imports; import; import = import->next)
+        if (import->span.source == alias.source &&
+            same_name(import->alias, alias))
+            return import;
     return NULL;
 }
 
@@ -319,9 +335,26 @@ static Type check_expr(Checker *checker, Expr *expr, Type expected, bool allow_a
         return expr->type = symbol->type;
     case EXPR_CALL:
     {
-        FunctionSymbol *function = find_function(checker, expr->as.call.name);
+        FunctionSymbol *function;
         Argument *argument = expr->as.call.arguments;
         const Parameter *parameter;
+        if (span_valid(expr->as.call.qualifier))
+        {
+            const Import *import = find_import(checker, expr->as.call.qualifier);
+            if (!import)
+            {
+                for (; argument; argument = argument->next)
+                    (void)check_expr(checker, argument->value, error_type(), false);
+                report(checker, expr->as.call.qualifier, "unknown module alias");
+                return expr->type = error_type();
+            }
+            function = find_function_in_source(checker, expr->as.call.name,
+                                               import->target);
+        }
+        else
+        {
+            function = find_function(checker, expr->as.call.name);
+        }
         if (!function)
         {
             for (; argument; argument = argument->next)
@@ -647,9 +680,27 @@ void checker_init(Checker *checker, DiagnosticSink diagnostics)
 
 bool checker_check(Checker *checker, Program *program)
 {
+    const Import *import;
     Function *function;
     FunctionSymbol *main_symbol = NULL;
     SourceSpan program_span = {program->source, 0, 0, 1, 1};
+    checker->program = program;
+    for (import = program->imports; import; import = import->next)
+    {
+        const Import *previous;
+        if (!span_valid(import->alias))
+            continue;
+        for (previous = program->imports; previous != import;
+             previous = previous->next)
+        {
+            if (previous->span.source == import->span.source &&
+                same_name(previous->alias, import->alias))
+            {
+                report(checker, import->alias, "duplicate module alias");
+                break;
+            }
+        }
+    }
     for (function = program->functions; function; function = function->next)
     {
         Parameter *parameter;
@@ -666,13 +717,19 @@ bool checker_check(Checker *checker, Program *program)
         function->symbol = define_function(checker, function);
         if (span_equals(function->name, "main"))
         {
-            if (main_symbol)
-                report(checker, function->name, "duplicate main function");
+            if (function->name.source != program->source)
+                report(checker, function->name,
+                       "main must be declared in the entry file");
             else
-                main_symbol = (FunctionSymbol *)function->symbol;
-            if (function->parameters)
-                report(checker, function->parameters->span,
-                       "main must not declare parameters");
+            {
+                if (main_symbol)
+                    report(checker, function->name, "duplicate main function");
+                else
+                    main_symbol = (FunctionSymbol *)function->symbol;
+                if (function->parameters)
+                    report(checker, function->parameters->span,
+                           "main must not declare parameters");
+            }
         }
     }
     if (!main_symbol)
@@ -692,6 +749,7 @@ bool checker_check(Checker *checker, Program *program)
         checker->scope = NULL;
     }
     checker->scope = NULL;
+    checker->program = NULL;
     checker->return_type = TYPE_ERROR;
     return checker->errors == 0;
 }

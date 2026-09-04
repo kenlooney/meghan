@@ -62,7 +62,15 @@ typedef struct Argument Argument;
 typedef struct Parameter Parameter;
 typedef struct Statement Statement;
 typedef struct Function Function;
+typedef struct Import Import;
 
+struct Import {
+    SourceSpan span;
+    SourceSpan path;
+    SourceSpan alias;
+    const Source *target;
+    Import *next;
+};
 struct Argument {
     Expr *value;
     Argument *next;
@@ -108,6 +116,7 @@ struct Expr {
         struct {SourceSpan literal; uint32_t value;} utf8_character;
         struct {SourceSpan literal; uint32_t value;} uchar;
         struct {
+            SourceSpan qualifier;
             SourceSpan name;
             const FunctionSymbol *symbol;
             Argument *arguments;
@@ -166,6 +175,7 @@ struct Function {
 
 typedef struct Program {
     const Source *source;
+    Import *imports;
     Function *functions;
 } Program;
 
