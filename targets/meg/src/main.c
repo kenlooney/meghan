@@ -11,12 +11,12 @@
 #include <stdio.h>
 #include <string.h>
 
-typedef enum OutputMode { OUTPUT_C, OUTPUT_AST, OUTPUT_JS } OutputMode;
+typedef enum OutputMode { OUTPUT_C, OUTPUT_AST, OUTPUT_JS, OUTPUT_FREESTANDING } OutputMode;
 typedef struct Options { const char *input; const char *output; OutputMode mode; } Options;
 
 static void usage(FILE *out, const char *program)
 {
-    fprintf(out, "usage: %s -i <source.meg> [-o output] [--emit c|js|ast]\n", program);
+    fprintf(out, "usage: %s -i <source.meg> [-o output] [--emit c|freestanding|js|ast]\n", program);
 }
 
 static bool options_parse(int argc, char **argv, Options *options)
@@ -33,6 +33,7 @@ static bool options_parse(int argc, char **argv, Options *options)
         } else if (strcmp(argv[i], "--emit") == 0) {
             if (++i == argc) return false;
             if (strcmp(argv[i], "c") == 0) options->mode = OUTPUT_C;
+            else if (strcmp(argv[i], "freestanding") == 0) options->mode = OUTPUT_FREESTANDING;
             else if (strcmp(argv[i], "js") == 0) options->mode = OUTPUT_JS;
             else if (strcmp(argv[i], "ast") == 0) options->mode = OUTPUT_AST;
             else return false;
@@ -80,6 +81,8 @@ int main(int argc, char **argv)
         if (!ast_print(temporary, parsed.program)) goto done;
     } else if (options.mode == OUTPUT_JS) {
         if (!codegen_js(temporary, parsed.program, diagnostics)) goto done;
+    } else if (options.mode == OUTPUT_FREESTANDING) {
+        if (!codegen_freestanding_c(temporary, parsed.program, diagnostics)) goto done;
     } else if (!codegen_c(temporary, parsed.program, diagnostics)) goto done;
     if (options.output) {
         destination = fopen(options.output, "wb");
@@ -95,4 +98,5 @@ done:
     source_destroy(&source);
     return status;
 }
+
 
