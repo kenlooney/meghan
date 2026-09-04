@@ -1,0 +1,7 @@
+import "math.meg" as math;
+import "forty.meg" as forty;
+import "two.meg" as two;
+
+fn answer() -> i64 {
+	return math.add(forty.value(), two.value());
+}
