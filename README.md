@@ -4,7 +4,8 @@ Meghan is a C11 compiler-construction project, also referred to as `meg`. It
 provides source management, diagnostics, lexing, parsing, semantic checking,
 and C and JavaScript code generation for the currently supported Meghan
 language forms. The `meg` command-line compiler reads a `.meg` source file and
-emits C code, JavaScript, or a readable AST representation.
+emits hosted C code, freestanding-compatible C code, JavaScript, or a readable
+AST representation.
 
 ## Current Status
 
@@ -32,6 +33,8 @@ emits C code, JavaScript, or a readable AST representation.
 	operators; loop scopes; literal ranges; and guaranteed returns.
 - C and JavaScript code generation for the currently supported expressions and
 	statements.
+- Freestanding-compatible C output with a `meg_entry` entry point and an
+	external `meg_panic` trap hook.
 - Automated tests for each pipeline stage, including code generation.
 
 ### Not Yet Supported
@@ -39,16 +42,18 @@ emits C code, JavaScript, or a readable AST representation.
 - Generating machine code or object files.
 - A stable Meghan language specification.
 - Invoking a C compiler to turn generated C into an executable.
-- Freestanding or native hosted backends.
+- Native freestanding or hosted backends, including platform startup code.
 
 The current source-generation pipeline is:
 
 ```text
-[Meghan source] -> [tokens] -> [AST] -> [checked AST] -> [C or JavaScript]
+[Meghan source] -> [tokens] -> [AST] -> [checked AST]
+	-> [hosted C, freestanding C, or JavaScript]
 ```
 
-C or JavaScript can then be passed to its respective toolchain to produce a
-running program. Native Meghan backends remain a long-term goal.
+Hosted C or freestanding-compatible C can then be passed to a C toolchain, and
+JavaScript can be passed to Node.js or another JavaScript runtime. Native
+Meghan backends remain a long-term goal.
 
 ## Quick Start
 
@@ -108,11 +113,24 @@ for Meghan integer values and can be run with Node.js:
 node answer.js
 ```
 
+Use `--emit freestanding` to generate C without a hosted `main` wrapper or a
+dependency on `<stdlib.h>`:
+
+```powershell
+.\bin\Debug\meg.exe --input answer.meg --emit freestanding -o answer.c
+```
+
+The generated source exposes `meg_entry` for platform-specific startup code
+and declares an external `meg_panic` function for invalid arithmetic traps. It
+is freestanding-compatible C output, not a complete native backend; the
+target environment must provide startup code, `meg_panic`, and any required
+toolchain or linker configuration.
+
 Use `--help` to print the command usage and `--version` to print the compiler
 version:
 
 ```text
-usage: meg -i <source.meg> [-o output] [--emit c|js|ast]
+usage: meg -i <source.meg> [-o output] [--emit c|freestanding|js|ast]
 ```
 
 ## Meghan Source Examples
@@ -258,6 +276,19 @@ if (!codegen_js(stdout, parsed.program, diagnostics))
 from `<stdint.h>`. It emits helpers that reject division by zero and the
 signed 64-bit minimum-value division or remainder edge case.
 
+Freestanding-compatible C output uses the same checked AST through a separate
+API:
+
+```c
+if (!codegen_freestanding_c(stdout, parsed.program, diagnostics))
+	return 1;
+```
+
+`codegen_freestanding_c` emits `meg_entry` instead of a hosted `main` wrapper,
+omits `<stdlib.h>`, and routes invalid division and remainder operations to an
+external `meg_panic` hook. The caller's target environment is responsible for
+providing that hook and the platform startup code.
+
 `codegen_js` writes JavaScript using `BigInt` for integer values. It narrows
 unsigned arithmetic to the declared width and reports signed arithmetic
 overflow. Values are normalized again when assigned, initialized, or returned.
@@ -299,6 +330,8 @@ The test suite currently includes:
 	generation in sequence.
 - `for_loops`: checks valid and invalid `for` loop parsing, checking, and
 	scoping.
+- `freestanding_tests`: checks freestanding C entry-point and trap-hook
+	generation without hosted runtime dependencies.
 - `cli_help`: verifies the command-line help path.
 
 ## Developer Guide
@@ -318,11 +351,13 @@ The language library is compiled with warnings enabled (`/W4` on MSVC and
 focused test in `tests/` and be registered in `tests/CMakeLists.txt`.
 
 The C and JavaScript generators consume a checked AST and emit the currently
-supported Meghan program forms. They use internal symbol IDs for generated
-variable names and helper functions that reject invalid signed division or
-remainder. Future work includes invoking target-language compilers and adding
-native backends while preserving source-span, type, symbol, and diagnostic
-information.
+supported Meghan program forms. Hosted C uses a normal `main` wrapper, while
+freestanding-compatible C exposes `meg_entry` and an external `meg_panic` hook.
+Both C modes use internal symbol IDs for generated variable names and helper
+functions that reject invalid signed division or remainder. Future work
+includes invoking target-language compilers, adding platform startup code, and
+building native backends while preserving source-span, type, symbol, and
+diagnostic information.
 
 ## License
 
