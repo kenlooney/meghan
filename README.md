@@ -35,9 +35,6 @@ AST representation.
 	statements.
 - Freestanding-compatible C output with a `meg_entry` entry point and an
 	external `meg_panic` trap hook.
-- Pointer and reference types for the supported fixed-width integer types,
-	including address-taking, dereferencing, and assignment through a
-	dereferenced value.
 - Automated tests for each pipeline stage, including code generation.
 
 ## Pointers and References
