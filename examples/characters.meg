@@ -1,7 +1,7 @@
 fn main() -> i64 {
-	let ascii: char = 'A';
-	let utf8: utf8_char = u8'é';
-	let unicode: uchar = u'😀';
+	let ascii: char = ascii_character();
+	let utf8: utf8_char = utf8_character();
+	let unicode: uchar = unicode_character();
 	let escaped: char = '\n';
 
 	if ascii != 'A' {
@@ -17,4 +17,16 @@ fn main() -> i64 {
 		return 4;
 	}
 	return 0;
+}
+
+fn ascii_character() -> char {
+	return 'A';
+}
+
+fn utf8_character() -> utf8_char {
+	return u8'é';
+}
+
+fn unicode_character() -> uchar {
+	return u'😀';
 }
