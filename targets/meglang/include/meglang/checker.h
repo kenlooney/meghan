@@ -38,6 +38,7 @@ struct FunctionSymbol {
 typedef struct Scope Scope;
 typedef struct Checker {
     DiagnosticSink diagnostics;
+    const Program *program;
     Scope *scope;
     Symbol *allocated;
     FunctionSymbol *functions;

@@ -42,6 +42,8 @@ AST representation.
 	external `meg_panic` trap hook.
 - Function symbol resolution, forward calls, typed arguments, boolean return
 	types, and all supported signed and unsigned integer widths.
+- Recursive relative imports, import-cycle detection, module aliases, qualified
+	function calls, and entry-file ownership of `main`.
 - Automated tests for each pipeline stage, including code generation.
 
 ## Pointers and References
@@ -84,6 +86,7 @@ pointer arithmetic, null pointers, or a complete memory model.
 - A stable Meghan language specification.
 - Invoking a C compiler to turn generated C into an executable.
 - Native freestanding or hosted backends, including platform startup code.
+- Qualified module variables, types, and other exported declarations.
 
 The current source-generation pipeline is:
 
@@ -135,6 +138,41 @@ slice, or nested-pointer types needed to expose that interface.
 
 See [`examples/parameters.meg`](examples/parameters.meg) for value and pointer
 parameters used in a complete program.
+
+## Modules and Imports
+
+Meghan source files can import other source files with a module alias. Import
+paths are resolved relative to the file containing the import:
+
+```meg
+import "math.meg" as math;
+
+fn main() -> i64 {
+	return math.add(40, 2);
+}
+```
+
+The alias qualifies calls into that module using `alias.function()`. An
+unqualified call resolves only within the source file containing the call, so
+different modules may safely declare functions with the same name. Imported
+modules can have their own imports, and the loader detects import cycles and
+loads repeated paths only once.
+
+Only the entry file may declare `main`. A function named `main` in an imported
+library is rejected and cannot accidentally become the program entry point.
+Imports are resolved at compile time; C, freestanding C, and JavaScript output
+contain one combined program whose functions use unique generated names.
+
+The complete example under [`examples/modules/`](examples/modules/) includes a
+transitive import and two separate modules that both declare `value()`:
+
+```powershell
+.\bin\Debug\meg.exe -i examples\modules\main.meg -o modules.c
+.\bin\Debug\meg.exe -i examples\modules\main.meg --emit js -o modules.js
+```
+
+Aliases currently qualify function calls only. Qualified variables and types
+are not yet part of the language.
 
 ## Character and String Literals
 
@@ -272,6 +310,13 @@ usage: meg -i <source.meg> [-o output] [--emit c|freestanding|js|ast]
 
 ## Meghan Source Examples
 
+Complete examples are available for [modules](examples/modules/),
+[characters](examples/characters.meg),
+[functions](examples/functions.meg),
+[parameters](examples/parameters.meg),
+[pointers](examples/raw-pointer.meg), and
+[references](examples/reference.meg).
+
 The lexer can recognize the current token vocabulary in source text such as:
 
 ```meg
@@ -307,13 +352,13 @@ require `bool`.
 The currently recognized keywords are:
 
 ```text
-fn let return if else while for true false ref i8 i16 i32 i64 u8 u16 u32 u64 bool
+fn let return if else while for true false ref import as i8 i16 i32 i64 u8 u16 u32 u64 bool
 ```
 
 The lexer recognizes these operators and punctuation:
 
 ```text
-( ) { } : , ; + - * / % ! & = == != < <= > >= ->
+( ) { } : , ; . + - * / % ! & = == != < <= > >= ->
 ```
 
 Integer literal examples include:
@@ -479,6 +524,9 @@ The test suite currently includes:
 	counts and types; parameter scopes; AST output; and both generators.
 - `character_tests`: checks ASCII, UTF-8, and Unicode character parsing,
 	typing, function returns, and C and JavaScript generation.
+- `import_alias_tests`: checks alias parsing and AST output, recursive module
+	loading, source-qualified function lookup, entry ownership, and both source
+	generators.
 - `cli_help`: verifies the command-line help path.
 
 ## Developer Guide

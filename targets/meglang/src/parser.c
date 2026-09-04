@@ -258,8 +258,17 @@ static Expr *parse_primary(Parser *parser)
     }
     if (token.kind == TOKEN_IDENTIFIER)
     {
+        Token qualifier = {0};
+        Token name = token;
         Token end;
         advance(parser);
+        if (parser->current.kind == TOKEN_DOT)
+        {
+            qualifier = token;
+            advance(parser);
+            name = expect(parser, TOKEN_IDENTIFIER,
+                          "expected function name after module alias");
+        }
         if (parser->current.kind == TOKEN_LPAREN)
         {
             Argument *arguments = NULL;
@@ -283,13 +292,20 @@ static Expr *parse_primary(Parser *parser)
                 }
             }
             end = expect(parser, TOKEN_RPAREN, "expected ')' after function name");
-            expr = new_expr(EXPR_CALL, joined(token.span, end.span));
-            expr->as.call.name = token.span;
+            expr = new_expr(EXPR_CALL,
+                            joined(span_valid(qualifier.span)
+                                       ? qualifier.span : name.span,
+                                   end.span));
+            expr->as.call.qualifier = qualifier.span;
+            expr->as.call.name = name.span;
             expr->as.call.arguments = arguments;
             return expr;
         }
-        expr = new_expr(EXPR_NAME, token.span);
-        expr->as.name = token.span;
+        if (span_valid(qualifier.span))
+            error_at(parser, joined(qualifier.span, name.span),
+                     "qualified names must be function calls");
+        expr = new_expr(EXPR_NAME, name.span);
+        expr->as.name = name.span;
         return expr;
     }
     if (token.kind == TOKEN_LPAREN)
@@ -486,18 +502,44 @@ static Statement *parse_block(Parser *parser)
 
 ParseResult parse_source(const Source *source, DiagnosticSink diagnostics)
 {
-    Parser parser;
+     Parser parser;
     Program *program = allocate(sizeof *program);
     Function **tail = &program->functions;
+    Import **import_tail = &program->imports;
     lexer_init(&parser.lexer, source, diagnostics);
-    parser.current = (Token){0};
-    parser.previous = (Token){0};
-    parser.diagnostics = diagnostics;
-    parser.errors = 0;
+    parser.current = (Token){0}; parser.previous = (Token){0};
+    parser.diagnostics = diagnostics; parser.errors = 0;
     program->source = source;
     advance(&parser);
-    while (parser.current.kind != TOKEN_EOF)
-    {
+    while (parser.current.kind != TOKEN_EOF) {
+        if (parser.current.kind == TOKEN_IMPORT) {
+            Token start = parser.current;
+            Token path, end;
+            Import *import = allocate(sizeof *import);
+            advance(&parser);
+            path = expect(&parser, TOKEN_STRING,
+                          "expected quoted source path after 'import'");
+            if (parser.current.kind == TOKEN_AS) {
+                advance(&parser);
+                import->alias = expect(&parser, TOKEN_IDENTIFIER,
+                                       "expected alias after 'as'").span;
+            }
+
+            end = expect(&parser, TOKEN_SEMICOLON,
+                         "expected ';' after import path");
+            import->span = joined(start.span, end.span);
+            import->path = path.span;
+            if (path.kind == TOKEN_STRING && path.span.length >= 2) {
+                ++import->path.start;
+                import->path.length -= 2;
+                ++import->path.column;
+                if (import->path.length == 0)
+                    error_at(&parser, path.span, "import path must not be empty");
+            }
+            *import_tail = import;
+            import_tail = &import->next;
+            continue;
+        }
         Token start = expect(&parser, TOKEN_FN, "expected 'fn'");
         Token name = expect(&parser, TOKEN_IDENTIFIER, "expected function name");
         Token return_type;
@@ -506,14 +548,13 @@ ParseResult parse_source(const Source *source, DiagnosticSink diagnostics)
         function->name = name.span;
         expect(&parser, TOKEN_LPAREN, "expected '('");
         while (parser.current.kind != TOKEN_RPAREN &&
-               parser.current.kind != TOKEN_EOF)
-        {
+               parser.current.kind != TOKEN_EOF) {
             Token parameter_name = expect(&parser, TOKEN_IDENTIFIER,
                                           "expected parameter name");
             Token parameter_type;
             Parameter *parameter = allocate(sizeof *parameter);
-            parameter->name = parameter_name.span;
             expect(&parser, TOKEN_COLON, "expected ':' after parameter name");
+            parameter->name = parameter_name.span;
             if (parser.current.kind == TOKEN_STAR || parser.current.kind == TOKEN_REF)
             {
                 parameter->type_modifier = parser.current.kind;
@@ -524,11 +565,9 @@ ParseResult parse_source(const Source *source, DiagnosticSink diagnostics)
             parameter->span = joined(parameter_name.span, parameter_type.span);
             *parameter_tail = parameter;
             parameter_tail = &parameter->next;
-            if (parser.current.kind != TOKEN_COMMA)
-                break;
+            if (parser.current.kind != TOKEN_COMMA) break;
             advance(&parser);
-            if (parser.current.kind == TOKEN_RPAREN)
-            {
+            if (parser.current.kind == TOKEN_RPAREN) {
                 error_at(&parser, parser.current.span,
                          "expected parameter after ','");
                 break;
@@ -543,8 +582,5 @@ ParseResult parse_source(const Source *source, DiagnosticSink diagnostics)
         *tail = function;
         tail = &function->next;
     }
-    {
-        ParseResult result = {program, parser.errors + parser.lexer.errors};
-        return result;
-    }
+    { ParseResult result = {program, parser.errors + parser.lexer.errors}; return result; }
 }

@@ -3,6 +3,7 @@
 #include <meglang/codegen.h>
 #include <meglang/codegen_js.h>
 #include <meglang/diagnostic.h>
+#include <meglang/module.h>
 #include <meglang/parser.h>
 #include <meglang/source.h>
 #include <meglang/version.h>
@@ -55,8 +56,7 @@ static bool copy_stream(FILE *from, FILE *to)
 int main(int argc, char **argv)
 {
     Options options;
-    Source source = {0};
-    ParseResult parsed = {0};
+    ModuleGraph graph = {0};
     Checker checker;
     bool checker_live = false;
     DiagnosticSink diagnostics = {diagnostic_print, stderr};
@@ -68,22 +68,20 @@ int main(int argc, char **argv)
         return 0;
     }
     if (!options_parse(argc, argv, &options)) { usage(stderr, argv[0]); return 2; }
-    if (!source_load(&source, options.input)) { fprintf(stderr, "%s: cannot read input\n", options.input); goto done; }
-    parsed = parse_source(&source, diagnostics);
-    if (parsed.errors) goto done;
+    if (!module_load(&graph, options.input, diagnostics)) goto done;
     if (options.mode != OUTPUT_AST) {
         checker_init(&checker, diagnostics); checker_live = true;
-        if (!checker_check(&checker, parsed.program)) goto done;
+        if (!checker_check(&checker, graph.program)) goto done;
     }
     temporary = tmpfile();
     if (!temporary) { fputs("meg: cannot create temporary output\n", stderr); goto done; }
     if (options.mode == OUTPUT_AST) {
-        if (!ast_print(temporary, parsed.program)) goto done;
+        if (!ast_print(temporary, graph.program)) goto done;
     } else if (options.mode == OUTPUT_JS) {
-        if (!codegen_js(temporary, parsed.program, diagnostics)) goto done;
+        if (!codegen_js(temporary, graph.program, diagnostics)) goto done;
     } else if (options.mode == OUTPUT_FREESTANDING) {
-        if (!codegen_freestanding_c(temporary, parsed.program, diagnostics)) goto done;
-    } else if (!codegen_c(temporary, parsed.program, diagnostics)) goto done;
+        if (!codegen_freestanding_c(temporary, graph.program, diagnostics)) goto done;
+    } else if (!codegen_c(temporary, graph.program, diagnostics)) goto done;
     if (options.output) {
         destination = fopen(options.output, "wb");
         if (!destination) { fprintf(stderr, "%s: cannot open output\n", options.output); goto done; }
@@ -94,8 +92,7 @@ done:
     if (destination != stdout && fclose(destination) != 0) status = 1;
     if (temporary) fclose(temporary);
     if (checker_live) checker_destroy(&checker);
-    program_destroy(parsed.program);
-    source_destroy(&source);
+    module_graph_destroy(&graph);
     return status;
 }
 

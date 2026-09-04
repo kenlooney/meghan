@@ -87,8 +87,17 @@ static void statements_destroy(Statement *statement)
 void program_destroy(Program *program)
 {
     Function *function;
+    Import *import;
     if (!program)
         return;
+    import = program->imports;
+    while (import)
+    {
+        Import *next_import = import->next;
+        free(import);
+        import = next_import;
+    }
+
     function = program->functions;
     while (function)
     {
@@ -140,7 +149,9 @@ static bool print_expr(FILE *out, const Expr *expr)
     {
         const Argument *argument;
         bool first = true;
-        if (!span_write(out, expr->as.call.name) || !put(out, "("))
+        if ((span_valid(expr->as.call.qualifier) &&
+             (!span_write(out, expr->as.call.qualifier) || !put(out, "."))) ||
+            !span_write(out, expr->as.call.name) || !put(out, "("))
             return false;
         for (argument = expr->as.call.arguments; argument; argument = argument->next)
         {
@@ -225,8 +236,18 @@ static bool print_statements(FILE *out, const Statement *statement, unsigned dep
 bool ast_print(FILE *out, const Program *program)
 {
     const Function *function;
+    const Import *import;
     if (!out || !program)
         return false;
+    for (import = program->imports; import; import = import->next)
+    {
+        if (!put(out, "import \"") || !span_write(out, import->path) ||
+            !put(out, "\"") ||
+            (span_valid(import->alias) &&
+             (!put(out, " as ") || !span_write(out, import->alias))) ||
+            !put(out, "\n"))
+            return false;
+    }
     for (function = program->functions; function; function = function->next)
     {
         const Parameter *parameter;
@@ -235,17 +256,12 @@ bool ast_print(FILE *out, const Program *program)
             return false;
         for (parameter = function->parameters; parameter; parameter = parameter->next)
         {
-            if ((!first && !put(out, ", ")) ||
-                !span_write(out, parameter->name) || !put(out, ": ") ||
-                (parameter->type_modifier != TOKEN_ERROR &&
-                 (!put(out, token_name(parameter->type_modifier)) ||
-                  (parameter->type_modifier == TOKEN_REF && !put(out, " ")))) ||
-                !span_write(out, parameter->type_name))
+            if ((!first && !put(out, ", ")) || !span_write(out, parameter->name) ||
+                !put(out, ": ") || !span_write(out, parameter->type_name))
                 return false;
             first = false;
         }
-        if (!put(out, ")") ||
-            !put(out, " -> ") || !span_write(out, function->return_type_name) ||
+        if (!put(out, ") -> ") || !span_write(out, function->return_type_name) ||
             !put(out, "\n") || !print_statements(out, function->body, 1))
             return false;
     }

@@ -1,0 +1,5 @@
+import "calculation.meg" as calculation;
+
+fn main() -> i64 {
+	return calculation.answer();
+}
