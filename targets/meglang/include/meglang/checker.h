@@ -22,7 +22,7 @@
 
 struct Symbol {
     SourceSpan name;
-    ValueType type;
+    Type type;
     unsigned id;
     struct Symbol *next_in_scope;
     struct Symbol *next_allocated;

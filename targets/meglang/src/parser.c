@@ -102,7 +102,7 @@ static Expr *new_expr(ExprKind kind, SourceSpan span)
     Expr *expr = allocate(sizeof *expr);
     expr->kind = kind;
     expr->span = span;
-    expr->type = TYPE_ERROR;
+    expr->type = (Type){TYPE_ERROR, TYPE_VALUE};
     return expr;
 }
 
@@ -112,7 +112,7 @@ static Statement *new_statement(StatementKind kind, SourceSpan span)
     statement->kind = kind;
     statement->span = span;
     if (kind == STMT_LET)
-        statement->as.let.type = TYPE_ERROR;
+        statement->as.let.type = (Type){TYPE_ERROR, TYPE_VALUE};
     return statement;
 }
 
@@ -205,8 +205,9 @@ static Expr *parse_primary(Parser *parser)
 static Expr *parse_prefix(Parser *parser)
 {
     Token token = parser->current;
-    if (token.kind == TOKEN_MINUS || token.kind == TOKEN_BANG)
-    {
+    if (token.kind == TOKEN_MINUS || token.kind == TOKEN_BANG ||
+        token.kind == TOKEN_STAR || token.kind == TOKEN_AMPERSAND ||
+        token.kind == TOKEN_REF) {
         Expr *expr;
         Expr *operand;
         advance(parser);
@@ -288,6 +289,10 @@ static Statement *parse_statement(Parser *parser)
         statement = new_statement(STMT_LET, start.span);
         name = expect(parser, TOKEN_IDENTIFIER, "expected variable name");
         expect(parser, TOKEN_COLON, "expected ':' after variable name");
+        if (parser->current.kind == TOKEN_STAR || parser->current.kind == TOKEN_REF) {
+            statement->as.let.type_modifier = parser->current.kind;
+            advance(parser);
+        }
         type = parse_type_name(parser);
         expect(parser, TOKEN_ASSIGN, "expected '=' after variable type");
         statement->as.let.name = name.span;

@@ -1,0 +1,6 @@
+fn main() -> i64 {
+	let value: i64 = 41;
+	let pointer: *i64 = &value;
+	*pointer = *pointer + 1;
+	return value;
+}

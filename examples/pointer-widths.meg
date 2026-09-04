@@ -1,0 +1,35 @@
+fn main() -> i64 {
+	let signed8: i8 = 1;
+	let pointer8: *i8 = &signed8;
+	*pointer8 = 8;
+
+	let signed16: i16 = 2;
+	let pointer16: *i16 = &signed16;
+	*pointer16 = 16;
+
+	let signed32: i32 = 3;
+	let reference32: ref i32 = ref signed32;
+	*reference32 = 32;
+
+	let signed64: i64 = 4;
+	let reference64: ref i64 = ref signed64;
+	*reference64 = 64;
+
+	let unsigned8: u8 = 5;
+	let unsigned_pointer8: *u8 = &unsigned8;
+	*unsigned_pointer8 = 8;
+
+	let unsigned16: u16 = 6;
+	let unsigned_pointer16: *u16 = &unsigned16;
+	*unsigned_pointer16 = 16;
+
+	let unsigned32: u32 = 7;
+	let unsigned_reference32: ref u32 = ref unsigned32;
+	*unsigned_reference32 = 32;
+
+	let unsigned64: u64 = 8;
+	let unsigned_reference64: ref u64 = ref unsigned64;
+	*unsigned_reference64 = 64;
+
+	return *reference64;
+}

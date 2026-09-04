@@ -34,6 +34,14 @@ typedef enum ValueType{
     TYPE_U64,
     TYPE_BOOL
 } ValueType;
+typedef enum TypeForm {
+    TYPE_VALUE,
+    TYPE_POINTER,
+    TYPE_REFERENCE,
+} TypeForm;
+
+typedef struct Type { ValueType value; TypeForm form; } Type;
+
 
 typedef struct Symbol Symbol;
 typedef struct Expr Expr;
@@ -50,7 +58,7 @@ typedef enum ExprKind {
 struct Expr {
     ExprKind kind;
     SourceSpan span;
-    ValueType type;
+    Type type;
     const Symbol *symbol;
     union {
         uint64_t integer;
@@ -76,7 +84,14 @@ struct Statement {
     SourceSpan span;
     Statement *next;
     union {
-        struct {SourceSpan name; SourceSpan type_name; ValueType type; const Symbol *symbol; Expr *value; } let;
+        struct {
+            SourceSpan name;
+            SourceSpan type_name;
+            TokenKind type_modifier;
+            Type type;
+            const Symbol *symbol;
+            Expr *value;
+        } let;
         Expr *expression;
         struct { Statement *items; } block;
         struct { Expr *condition; Statement *then_branch; Statement *else_branch; } branch;

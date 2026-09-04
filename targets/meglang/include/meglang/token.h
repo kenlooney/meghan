@@ -60,6 +60,8 @@ typedef enum TokenKind {
     TOKEN_GREATER,
     TOKEN_GREATER_EQUAL,
     TOKEN_ARROW,
+    TOKEN_REF,
+    TOKEN_AMPERSAND,
     TOKEN_KIND_COUNT
 } TokenKind;
 

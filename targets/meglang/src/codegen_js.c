@@ -74,27 +74,42 @@ static unsigned integer_bits(ValueType type)
 
 static bool emit_expr(JsEmitter *emitter, const Expr *expr);
 
-static bool emit_integer_conversion_start(JsEmitter *emitter, ValueType type)
+static bool emit_integer_conversion_start(JsEmitter *emitter, Type type)
 {
-    if (is_signed_integer_type(type))
-        return emit(emitter, "meg_signed(%u, ", integer_bits(type));
-    if (is_unsigned_integer_type(type))
-        return emit(emitter, "meg_unsigned(%u, ", integer_bits(type));
+    if (type.form != TYPE_VALUE) return true;
+    if (is_signed_integer_type(type.value))
+        return emit(emitter, "meg_signed(%u, ", integer_bits(type.value));
+    if (is_unsigned_integer_type(type.value))
+        return emit(emitter, "meg_unsigned(%u, ", integer_bits(type.value));
     return true;
 }
 
-static bool emit_integer_conversion_end(JsEmitter *emitter, ValueType type)
+static bool emit_integer_conversion_end(JsEmitter *emitter, Type type)
 {
-    if (is_signed_integer_type(type) || is_unsigned_integer_type(type))
+    if (type.form == TYPE_VALUE &&
+        (is_signed_integer_type(type.value) || is_unsigned_integer_type(type.value)))
         return emit(emitter, ")");
     return true;
 }
 
-static bool emit_typed_expr(JsEmitter *emitter, const Expr *expr, ValueType type)
+static bool emit_typed_expr(JsEmitter *emitter, const Expr *expr, Type type)
 {
     return emit_integer_conversion_start(emitter, type) &&
            emit_expr(emitter, expr) &&
            emit_integer_conversion_end(emitter, type);
+}
+
+static bool emit_reference(JsEmitter *emitter, const Expr *operand)
+{
+    if (operand->kind == EXPR_UNARY && operand->as.unary.op == TOKEN_STAR)
+        return emit_expr(emitter, operand->as.unary.operand);
+    return emit(emitter, "({ get: () => ") && emit_expr(emitter, operand) &&
+           emit(emitter, ", set: meg_value => { ") && emit_expr(emitter, operand) &&
+           emit(emitter, " = ") &&
+           emit_integer_conversion_start(emitter, operand->type) &&
+           emit(emitter, "meg_value") &&
+           emit_integer_conversion_end(emitter, operand->type) &&
+           emit(emitter, "; } })");
 }
 
 static bool emit_expr(JsEmitter *emitter, const Expr *expr)
@@ -104,7 +119,13 @@ static bool emit_expr(JsEmitter *emitter, const Expr *expr)
     case EXPR_BOOL: return emit(emitter, "%s", expr->as.boolean ? "true" : "false");
     case EXPR_NAME: return emit(emitter, "meg_v_%u", expr->symbol->id);
     case EXPR_UNARY:
-        if (expr->as.unary.op == TOKEN_MINUS && is_signed_integer_type(expr->type))
+        if (expr->as.unary.op == TOKEN_AMPERSAND || expr->as.unary.op == TOKEN_REF)
+            return emit_reference(emitter, expr->as.unary.operand);
+        if (expr->as.unary.op == TOKEN_STAR)
+            return emit(emitter, "(") && emit_expr(emitter, expr->as.unary.operand) &&
+                   emit(emitter, ").get()");
+        if (expr->as.unary.op == TOKEN_MINUS &&
+            is_signed_integer_type(expr->type.value))
             return emit_integer_conversion_start(emitter, expr->type) &&
                    emit(emitter, "(-") && emit_expr(emitter, expr->as.unary.operand) &&
                    emit(emitter, ")") && emit_integer_conversion_end(emitter, expr->type);
@@ -112,19 +133,30 @@ static bool emit_expr(JsEmitter *emitter, const Expr *expr)
                emit_expr(emitter, expr->as.unary.operand) && emit(emitter, ")");
     case EXPR_BINARY:
         if (expr->as.binary.op == TOKEN_ASSIGN)
-            return emit(emitter, "(") && emit_expr(emitter, expr->as.binary.left) &&
-                   emit(emitter, " = ") &&
-                   emit_typed_expr(emitter, expr->as.binary.right,
-                                   expr->as.binary.left->type) &&
-                   emit(emitter, ")");
+            if (expr->as.binary.left->kind == EXPR_UNARY &&
+                expr->as.binary.left->as.unary.op == TOKEN_STAR)
+                return emit(emitter, "(") &&
+                       emit_expr(emitter,
+                                 expr->as.binary.left->as.unary.operand) &&
+                       emit(emitter, ").set(") &&
+                       emit_typed_expr(emitter, expr->as.binary.right,
+                                       expr->as.binary.left->type) &&
+                       emit(emitter, ")");
+            else
+                return emit(emitter, "(") &&
+                       emit_expr(emitter, expr->as.binary.left) &&
+                       emit(emitter, " = ") &&
+                       emit_typed_expr(emitter, expr->as.binary.right,
+                                       expr->as.binary.left->type) &&
+                       emit(emitter, ")");
         if (expr->as.binary.op == TOKEN_SLASH || expr->as.binary.op == TOKEN_PERCENT) {
-            bool is_unsigned = is_unsigned_integer_type(expr->type);
+            bool is_unsigned = is_unsigned_integer_type(expr->type.value);
             const char *helper = expr->as.binary.op == TOKEN_SLASH
                 ? (is_unsigned ? "meg_div_unsigned" : "meg_div_signed")
                 : (is_unsigned ? "meg_rem_unsigned" : "meg_rem_signed");
             return emit_integer_conversion_start(emitter, expr->type) &&
                    emit(emitter, "%s(", helper) &&
-                   (!is_unsigned ? emit(emitter, "%u, ", integer_bits(expr->type)) : true) &&
+                   (!is_unsigned ? emit(emitter, "%u, ", integer_bits(expr->type.value)) : true) &&
                    emit_expr(emitter, expr->as.binary.left) && emit(emitter, ", ") &&
                    emit_expr(emitter, expr->as.binary.right) && emit(emitter, ")") &&
                    emit_integer_conversion_end(emitter, expr->type);
@@ -166,7 +198,8 @@ static bool emit_statements(JsEmitter *emitter, const Statement *statement, unsi
             break;
         case STMT_RETURN:
             if (!emit(emitter, "return ") ||
-                !emit_typed_expr(emitter, statement->as.expression, emitter->return_type) ||
+                !emit_typed_expr(emitter, statement->as.expression,
+                                 (Type){emitter->return_type, TYPE_VALUE}) ||
                 !emit(emitter, ";\n")) return false;
             break;
         case STMT_EXPR:

@@ -21,6 +21,20 @@
 
 struct Scope { Scope *parent; Symbol *symbols; };
 
+static Type make_type(ValueType value, TypeForm form)
+{
+    Type type = {value, form};
+    return type;
+}
+
+static Type value_type(ValueType value) { return make_type(value, TYPE_VALUE); }
+static Type error_type(void) { return value_type(TYPE_ERROR); }
+static bool is_error(Type type) { return type.value == TYPE_ERROR; }
+static bool same_type(Type left, Type right)
+{
+    return left.value == right.value && left.form == right.form;
+}
+
 const char *value_type_name(ValueType type)
 {
     switch (type) {
@@ -61,7 +75,7 @@ static Symbol *find(Checker *checker, SourceSpan name)
     return NULL;
 }
 
-static Symbol *define(Checker *checker, SourceSpan name, ValueType type)
+static Symbol *define(Checker *checker, SourceSpan name, Type type)
 {
     Symbol *symbol;
     for (symbol = checker->scope->symbols; symbol; symbol = symbol->next_in_scope) {
@@ -93,34 +107,37 @@ static ValueType written_type(SourceSpan span)
     if (span_equals(span, "bool")) return TYPE_BOOL;
     return TYPE_ERROR;
 }
-static bool is_signed_integer_type(ValueType type)
+
+static bool is_signed_integer_value(ValueType type)
 {
     return type == TYPE_I8 || type == TYPE_I16 ||
            type == TYPE_I32 || type == TYPE_I64;
 }
 
-static bool is_unsigned_integer_type(ValueType type)
+static bool is_unsigned_integer_value(ValueType type)
 {
     return type == TYPE_U8 || type == TYPE_U16 ||
            type == TYPE_U32 || type == TYPE_U64;
 }
 
-static bool is_integer_type(ValueType type)
+static bool is_integer_type(Type type)
 {
-    return is_signed_integer_type(type) || is_unsigned_integer_type(type);
+    return type.form == TYPE_VALUE &&
+           (is_signed_integer_value(type.value) || is_unsigned_integer_value(type.value));
 }
 
-static bool integer_fits_type(uint64_t value, ValueType type) {
+static bool integer_fits_type(uint64_t value, ValueType type)
+{
     switch (type) {
-        case TYPE_I8: return value <= INT8_MAX;
-        case TYPE_I16: return value <= INT16_MAX;
-        case TYPE_I32: return value <= INT32_MAX;
-        case TYPE_I64: return value <= INT64_MAX;
-        case TYPE_U8: return value <= UINT8_MAX;
-        case TYPE_U16: return value <= UINT16_MAX;
-        case TYPE_U32: return value <= UINT32_MAX;
-        case TYPE_U64: return true;
-        default: return false;
+    case TYPE_I8: return value <= INT8_MAX;
+    case TYPE_I16: return value <= INT16_MAX;
+    case TYPE_I32: return value <= INT32_MAX;
+    case TYPE_I64: return value <= INT64_MAX;
+    case TYPE_U8: return value <= UINT8_MAX;
+    case TYPE_U16: return value <= UINT16_MAX;
+    case TYPE_U32: return value <= UINT32_MAX;
+    case TYPE_U64: return true;
+    default: return false;
     }
 }
 
@@ -135,113 +152,153 @@ static bool negative_integer_fits_type(uint64_t magnitude, ValueType type)
     }
 }
 
-static ValueType check_expr(Checker *checker, Expr *expr, ValueType expected, bool allow_assignment)
+static bool is_lvalue(const Expr *expr)
 {
-    ValueType left, right;
+    return expr && (expr->kind == EXPR_NAME ||
+           (expr->kind == EXPR_UNARY && expr->as.unary.op == TOKEN_STAR));
+}
+
+static Type check_expr(Checker *checker, Expr *expr, Type expected, bool allow_assignment)
+{
+    Type left, right;
     Symbol *symbol;
-    if (!expr) return TYPE_ERROR;
+    if (!expr) return error_type();
     switch (expr->kind) {
-    case EXPR_INT:
-    {
-        ValueType type = is_integer_type(expected)
+    case EXPR_INT: {
+        Type type = is_integer_type(expected)
             ? expected
-            : (expr->as.integer <= INT64_MAX ? TYPE_I64 : TYPE_U64);
-        if(!integer_fits_type(expr->as.integer, type)) {
+            : value_type(expr->as.integer <= INT64_MAX ? TYPE_I64 : TYPE_U64);
+        if (!integer_fits_type(expr->as.integer, type.value)) {
             report(checker, expr->span, "integer literal does not fit in the expected type");
-            return expr->type = TYPE_ERROR;
+            return expr->type = error_type();
         }
         return expr->type = type;
     }
-    case EXPR_BOOL: return expr->type = TYPE_BOOL;
+    case EXPR_BOOL: return expr->type = value_type(TYPE_BOOL);
     case EXPR_NAME:
         symbol = find(checker, expr->as.name);
-        if (!symbol) { report(checker, expr->span, "unknown variable"); return expr->type = TYPE_ERROR; }
+        if (!symbol) {
+            report(checker, expr->span, "unknown variable");
+            return expr->type = error_type();
+        }
         expr->symbol = symbol;
         return expr->type = symbol->type;
     case EXPR_UNARY:
+        if (expr->as.unary.op == TOKEN_AMPERSAND || expr->as.unary.op == TOKEN_REF) {
+            TypeForm form = expr->as.unary.op == TOKEN_AMPERSAND
+                ? TYPE_POINTER : TYPE_REFERENCE;
+            if (!is_lvalue(expr->as.unary.operand)) {
+                (void)check_expr(checker, expr->as.unary.operand, error_type(), false);
+                report(checker, expr->as.unary.operand->span,
+                       "address and reference operators require an assignable value");
+                return expr->type = error_type();
+            }
+            left = check_expr(checker, expr->as.unary.operand, error_type(), false);
+            if (is_error(left)) return expr->type = error_type();
+            if (left.form != TYPE_VALUE) {
+                report(checker, expr->span, "cannot take the address or reference of this value");
+                return expr->type = error_type();
+            }
+            return expr->type = make_type(left.value, form);
+        }
+        if (expr->as.unary.op == TOKEN_STAR) {
+            left = check_expr(checker, expr->as.unary.operand, error_type(), false);
+            if (is_error(left)) return expr->type = error_type();
+            if (left.form != TYPE_POINTER && left.form != TYPE_REFERENCE) {
+                report(checker, expr->span, "unary '*' requires a pointer or reference");
+                return expr->type = error_type();
+            }
+            return expr->type = value_type(left.value);
+        }
         if (expr->as.unary.op == TOKEN_MINUS) {
             if (expr->as.unary.operand->kind == EXPR_INT &&
-                is_signed_integer_type(expected)) {
-                if (!negative_integer_fits_type(
-                        expr->as.unary.operand->as.integer, expected)) {
+                expected.form == TYPE_VALUE && is_signed_integer_value(expected.value)) {
+                if (!negative_integer_fits_type(expr->as.unary.operand->as.integer,
+                                                expected.value)) {
                     report(checker, expr->span,
                            "negative integer literal does not fit in the expected type");
-                    return expr->type = TYPE_ERROR;
+                    return expr->type = error_type();
                 }
                 expr->as.unary.operand->type = expected;
                 return expr->type = expected;
             }
             left = check_expr(checker, expr->as.unary.operand, expected, false);
-            if (left == TYPE_ERROR) return expr->type = TYPE_ERROR;
-            if (!is_signed_integer_type(left)) { report(checker, expr->span, "unary '-' requires a signed integer"); return expr->type = TYPE_ERROR; }
+            if (is_error(left)) return expr->type = error_type();
+            if (!is_integer_type(left) || !is_signed_integer_value(left.value)) {
+                report(checker, expr->span, "unary '-' requires a signed integer");
+                return expr->type = error_type();
+            }
             return expr->type = left;
         }
-        left = check_expr(checker, expr->as.unary.operand, TYPE_BOOL, false);
-        if (left == TYPE_ERROR) return expr->type = TYPE_ERROR;
-        if (left != TYPE_BOOL) { report(checker, expr->span, "unary '!' requires bool"); return expr->type = TYPE_ERROR; }
-        return expr->type = TYPE_BOOL;
+        left = check_expr(checker, expr->as.unary.operand, value_type(TYPE_BOOL), false);
+        if (is_error(left)) return expr->type = error_type();
+        if (!same_type(left, value_type(TYPE_BOOL))) {
+            report(checker, expr->span, "unary '!' requires bool");
+            return expr->type = error_type();
+        }
+        return expr->type = value_type(TYPE_BOOL);
     case EXPR_BINARY:
         if (expr->as.binary.op == TOKEN_ASSIGN) {
             if (!allow_assignment) {
                 report(checker, expr->span, "assignment is only allowed as a statement");
-                return expr->type = TYPE_ERROR;
+                return expr->type = error_type();
             }
-            if (expr->as.binary.left->kind != EXPR_NAME) {
-                check_expr(checker, expr->as.binary.left, TYPE_ERROR, false);
-                report(checker, expr->as.binary.left->span, "assignment target must be a variable");
-                return expr->type = TYPE_ERROR;
+            if (!is_lvalue(expr->as.binary.left)) {
+                (void)check_expr(checker, expr->as.binary.left, error_type(), false);
+                report(checker, expr->as.binary.left->span,
+                       "assignment target must be a variable or dereferenced pointer");
+                return expr->type = error_type();
             }
-            left = check_expr(checker, expr->as.binary.left, TYPE_ERROR, false);
+            left = check_expr(checker, expr->as.binary.left, error_type(), false);
             right = check_expr(checker, expr->as.binary.right, left, false);
-            if (left == TYPE_ERROR || right == TYPE_ERROR) return expr->type = TYPE_ERROR;
-            if (left != right) { report(checker, expr->span, "assignment types do not match"); return expr->type = TYPE_ERROR; }
+            if (is_error(left) || is_error(right)) return expr->type = error_type();
+            if (!same_type(left, right)) {
+                report(checker, expr->span, "assignment types do not match");
+                return expr->type = error_type();
+            }
             return expr->type = left;
         }
         switch (expr->as.binary.op) {
-        case TOKEN_PLUS:
-        case TOKEN_MINUS:
-        case TOKEN_STAR:
-        case TOKEN_SLASH:
-        case TOKEN_PERCENT:
-            left = check_expr(
-                checker,
-                expr->as.binary.left,
-                expected,
-                false);
-            right = check_expr(
-                checker,
-                expr->as.binary.right,
-                expected,
-                false);
-            if (left == TYPE_ERROR || right == TYPE_ERROR)
-                return expr->type = TYPE_ERROR;
+        case TOKEN_PLUS: case TOKEN_MINUS: case TOKEN_STAR:
+        case TOKEN_SLASH: case TOKEN_PERCENT:
+            left = check_expr(checker, expr->as.binary.left, expected, false);
+            right = check_expr(checker, expr->as.binary.right, expected, false);
+            if (is_error(left) || is_error(right)) return expr->type = error_type();
             if (!is_integer_type(left) || !is_integer_type(right)) {
                 report(checker, expr->span, "arithmetic operators require integer operands");
-                return expr->type = TYPE_ERROR;
+                return expr->type = error_type();
             }
-            if (left != right) {
+            if (!same_type(left, right)) {
                 report(checker, expr->span, "arithmetic operands must have the same type");
-                return expr->type = TYPE_ERROR;
+                return expr->type = error_type();
             }
             return expr->type = left;
-        case TOKEN_LESS: case TOKEN_LESS_EQUAL: case TOKEN_GREATER: case TOKEN_GREATER_EQUAL:
-            left = check_expr(checker, expr->as.binary.left, TYPE_ERROR, false);
+        case TOKEN_LESS: case TOKEN_LESS_EQUAL:
+        case TOKEN_GREATER: case TOKEN_GREATER_EQUAL:
+            left = check_expr(checker, expr->as.binary.left, error_type(), false);
             right = check_expr(checker, expr->as.binary.right, left, false);
-            if (left == TYPE_ERROR || right == TYPE_ERROR) return expr->type = TYPE_ERROR;
-            if (!is_integer_type(left) || left != right) { report(checker, expr->span, "comparison requires matching integer operands"); return expr->type = TYPE_ERROR; }
-            return expr->type = TYPE_BOOL;
+            if (is_error(left) || is_error(right)) return expr->type = error_type();
+            if (!is_integer_type(left) || !same_type(left, right)) {
+                report(checker, expr->span, "comparison requires matching integer operands");
+                return expr->type = error_type();
+            }
+            return expr->type = value_type(TYPE_BOOL);
         case TOKEN_EQUAL: case TOKEN_NOT_EQUAL:
-            left = check_expr(checker, expr->as.binary.left, TYPE_ERROR, false);
+            left = check_expr(checker, expr->as.binary.left, error_type(), false);
             right = check_expr(checker, expr->as.binary.right, left, false);
-            if (left == TYPE_ERROR || right == TYPE_ERROR) return expr->type = TYPE_ERROR;
-            if (left != right) { report(checker, expr->span, "equality operands must have the same type"); return expr->type = TYPE_ERROR; }
-            return expr->type = TYPE_BOOL;
-        default: report(checker, expr->span, "invalid binary operator"); return expr->type = TYPE_ERROR;
+            if (is_error(left) || is_error(right)) return expr->type = error_type();
+            if (!same_type(left, right)) {
+                report(checker, expr->span, "equality operands must have the same type");
+                return expr->type = error_type();
+            }
+            return expr->type = value_type(TYPE_BOOL);
+        default:
+            report(checker, expr->span, "invalid binary operator");
+            return expr->type = error_type();
         }
     }
-    return TYPE_ERROR;
+    return error_type();
 }
-
 
 static void check_statements(Checker *checker, Statement *statement);
 static void check_block(Checker *checker, Statement *block);
@@ -249,14 +306,15 @@ static void check_block(Checker *checker, Statement *block);
 static void check_for(Checker *checker, Statement *statement)
 {
     Scope loop_scope = {checker->scope, NULL};
-    ValueType condition;
+    Type condition;
     checker->scope = &loop_scope;
     check_statements(checker, statement->as.iteration.initializer);
-    condition = check_expr(checker, statement->as.iteration.condition, TYPE_BOOL, false);
-    if (condition != TYPE_ERROR && condition != TYPE_BOOL)
+    condition = check_expr(checker, statement->as.iteration.condition,
+                           value_type(TYPE_BOOL), false);
+    if (!is_error(condition) && !same_type(condition, value_type(TYPE_BOOL)))
         report(checker, statement->as.iteration.condition->span,
                "for condition must be bool");
-    (void)check_expr(checker, statement->as.iteration.step, TYPE_ERROR, true);
+    (void)check_expr(checker, statement->as.iteration.step, error_type(), true);
     check_block(checker, statement->as.iteration.body);
     checker->scope = loop_scope.parent;
 }
@@ -272,41 +330,51 @@ static void check_block(Checker *checker, Statement *block)
 static void check_statements(Checker *checker, Statement *statement)
 {
     for (; statement; statement = statement->next) {
-        ValueType got;
+        Type got;
         switch (statement->kind) {
-        case STMT_LET:
-            statement->as.let.type = written_type(statement->as.let.type_name);
-            got = check_expr(
-                checker,
-                statement->as.let.value,
-                statement->as.let.type,
-                false);
-
-            if (got != TYPE_ERROR && got != statement->as.let.type)
-                report(checker, statement->span, "initializer type does not match variable type");
-            statement->as.let.symbol = define(
-                checker,
-                statement->as.let.name,
-                statement->as.let.type);
-
+        case STMT_LET: {
+            TypeForm form = TYPE_VALUE;
+            if (statement->as.let.type_modifier == TOKEN_STAR) form = TYPE_POINTER;
+            if (statement->as.let.type_modifier == TOKEN_REF) form = TYPE_REFERENCE;
+            statement->as.let.type = make_type(
+                written_type(statement->as.let.type_name), form);
+            got = check_expr(checker, statement->as.let.value,
+                             statement->as.let.type, false);
+            if (!is_error(got) && !same_type(got, statement->as.let.type))
+                report(checker, statement->span,
+                       "initializer type does not match variable type");
+            statement->as.let.symbol = define(checker, statement->as.let.name,
+                                               statement->as.let.type);
             break;
+        }
         case STMT_RETURN:
-            got = check_expr(checker, statement->as.expression, checker->return_type, false);
-            if (got != TYPE_ERROR && got != checker->return_type)
-                report(checker, statement->span, "return type does not match function return type");
+            got = check_expr(checker, statement->as.expression,
+                             value_type(checker->return_type), false);
+            if (!is_error(got) && !same_type(got, value_type(checker->return_type)))
+                report(checker, statement->span,
+                       "return type does not match function return type");
             break;
-        case STMT_EXPR: (void)check_expr(checker, statement->as.expression, TYPE_ERROR, true); break;
+        case STMT_EXPR:
+            (void)check_expr(checker, statement->as.expression, error_type(), true);
+            break;
         case STMT_BLOCK: check_block(checker, statement); break;
         case STMT_FOR: check_for(checker, statement); break;
         case STMT_IF:
-            got = check_expr(checker, statement->as.branch.condition, TYPE_BOOL, false);
-            if (got != TYPE_ERROR && got != TYPE_BOOL) report(checker, statement->as.branch.condition->span, "if condition must be bool");
+            got = check_expr(checker, statement->as.branch.condition,
+                             value_type(TYPE_BOOL), false);
+            if (!is_error(got) && !same_type(got, value_type(TYPE_BOOL)))
+                report(checker, statement->as.branch.condition->span,
+                       "if condition must be bool");
             check_block(checker, statement->as.branch.then_branch);
-            if (statement->as.branch.else_branch) check_block(checker, statement->as.branch.else_branch);
+            if (statement->as.branch.else_branch)
+                check_block(checker, statement->as.branch.else_branch);
             break;
         case STMT_WHILE:
-            got = check_expr(checker, statement->as.loop.condition, TYPE_BOOL, false);
-            if (got != TYPE_ERROR && got != TYPE_BOOL) report(checker, statement->as.loop.condition->span, "while condition must be bool");
+            got = check_expr(checker, statement->as.loop.condition,
+                             value_type(TYPE_BOOL), false);
+            if (!is_error(got) && !same_type(got, value_type(TYPE_BOOL)))
+                report(checker, statement->as.loop.condition->span,
+                       "while condition must be bool");
             check_block(checker, statement->as.loop.body);
             break;
         }
@@ -317,7 +385,8 @@ static bool guarantees_return(const Statement *statement)
 {
     for (; statement; statement = statement->next) {
         if (statement->kind == STMT_RETURN) return true;
-        if (statement->kind == STMT_BLOCK && guarantees_return(statement->as.block.items)) return true;
+        if (statement->kind == STMT_BLOCK &&
+            guarantees_return(statement->as.block.items)) return true;
         if (statement->kind == STMT_IF && statement->as.branch.else_branch &&
             guarantees_return(statement->as.branch.then_branch) &&
             guarantees_return(statement->as.branch.else_branch)) return true;
@@ -339,7 +408,8 @@ bool checker_check(Checker *checker, Program *program)
     checker->scope = &root;
     check_block(checker, program->function.body);
     if (!guarantees_return(program->function.body))
-        report(checker, program->function.span, "main may reach the end without returning");
+        report(checker, program->function.span,
+               "main may reach the end without returning");
     checker->scope = NULL;
     return checker->errors == 0;
 }
@@ -347,6 +417,10 @@ bool checker_check(Checker *checker, Program *program)
 void checker_destroy(Checker *checker)
 {
     Symbol *symbol = checker->allocated;
-    while (symbol) { Symbol *next = symbol->next_allocated; free(symbol); symbol = next; }
+    while (symbol) {
+        Symbol *next = symbol->next_allocated;
+        free(symbol);
+        symbol = next;
+    }
     *checker = (Checker){0};
 }
