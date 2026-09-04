@@ -142,11 +142,11 @@ The lexer recognizes both character and string forms:
 
 ```meg
 'A'
-u8'\xc3\xa9'
-u'\xf0\x9f\x98\x80'
+u8'é'
+u'😀'
 "plain ASCII"
-u8"caf\u00e9"
-u"snowman: \u2603"
+u8"café"
+u"snowman: ☃"
 ```
 
 Plain ASCII characters and strings are restricted to ASCII. The `u8` prefix
@@ -161,13 +161,36 @@ Character literals continue through the parser into `EXPR_CHAR`,
 `EXPR_STRING` nodes with their encoding metadata. These are checked as
 `TYPE_CHAR`, `TYPE_UTF8_CHAR`, `TYPE_UCHAR`, `TYPE_STRING`, and `TYPE_USTRING`
 respectively. The AST keeps the original literal span so the printer can
-reproduce the source spelling without allocating decoded storage.
+reproduce the source spelling. Character expressions also store their decoded
+Unicode scalar value for portable code generation.
+
+Character types can be used in declarations, parameters, and function return
+types. For example:
+
+```meg
+fn utf8_character() -> utf8_char {
+	return u8'é';
+}
+
+fn unicode_character() -> uchar {
+	return u'😀';
+}
+```
+
+The C generator represents `char` as `uint8_t` and both Unicode character
+types as `uint32_t`. It emits decoded numeric constants instead of relying on
+target-specific character-literal syntax. The JavaScript generator emits the
+same scalar values as numbers.
 
 Characters and strings are not interchangeable with integer values. Expressions
 such as `"hello" + 1` and other mismatched arithmetic patterns are rejected by
 the checker. Declared `string` and `ustring` variables, string initializers,
 and C or JavaScript string generation are not supported yet, but the literal
 path itself is now implemented and validated across the compiler pipeline.
+
+See [`examples/characters.meg`](examples/characters.meg) for a complete program
+that calls functions returning all three character types and validates their
+results.
 
 ## Quick Start
 
@@ -454,6 +477,8 @@ The test suite currently includes:
 	unknown-function errors, and C and JavaScript generation.
 - `parameter_tests`: checks value, pointer, and reference parameters; argument
 	counts and types; parameter scopes; AST output; and both generators.
+- `character_tests`: checks ASCII, UTF-8, and Unicode character parsing,
+	typing, function returns, and C and JavaScript generation.
 - `cli_help`: verifies the command-line help path.
 
 ## Developer Guide
@@ -464,6 +489,7 @@ The repository is organized into these main areas:
 targets/meg/       The meg command-line executable
 targets/meglang/   The public language library and its C implementation
 tests/             CTest-based executable tests
+examples/          Complete Meghan programs demonstrating supported features
 bin/               Built runtime artifacts
 out/               CMake build directories
 ```

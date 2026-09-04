@@ -12,8 +12,8 @@ I wanted the lexer to recognize these forms:
 
 ```meg
 'A'
-u8'\xc3\xa9'
-u'\xf0\x9f\x98\x80'
+u8'é'
+u'😀'
 ```
 
 The plain form is restricted to ASCII. The `u8` form expects a valid UTF-8 code point. The `u` form expects a wide character value that eventually becomes a 32-bit code point in the compiler. That gave me a much more concrete way to test not just syntax, but also the encoding rules.
@@ -32,7 +32,7 @@ Once the scanner had all of that in place, the compiler could finally distinguis
 
 The parser now turns those token kinds into expression nodes. I added `EXPR_CHAR`, `EXPR_UTF8_CHAR`, and `EXPR_UCHAR`, and each one stores both the original source span and a decoded numeric value.
 
-That means the AST is no longer just a place where text gets remembered. It can keep enough information to know exactly what the source literal meant. An ASCII literal like `'A'` becomes `65`. A UTF-8 literal like `u8'\xc3\xa9'` becomes `233`. A wide literal like `u'\xf0\x9f\x98\x80'` becomes `128512`.
+That means the AST is no longer just a place where text gets remembered. It can keep enough information to know exactly what the source literal meant. An ASCII literal like `'A'` becomes `65`. A UTF-8 literal like `u8'é'` becomes `233`. A wide literal like `u'😀'` becomes `128512`.
 
 This is a nice example of the boundary I want in the compiler: the lexer decides what the source text is, the parser decides what the expression shape is, and the AST stores the value in a way that the checker and code generators can use.
 
@@ -54,6 +54,30 @@ The C backend emits numeric constants for these literals. A plain ASCII characte
 
 The JavaScript backend does the same kind of thing in a simpler form: it emits the numeric value directly. The generated output is still a long way from a proper text runtime, but the literal path is now real and testable.
 
+## Can a function return a character now?
+
+Yes! This was the final connection that made the new types feel like part of the language instead of isolated literals.
+
+The parser now accepts `char`, `utf8_char`, and `uchar` in declarations, parameters, and function return types. That lets me write small functions like these:
+
+```meg
+fn ascii_character() -> char {
+	return 'A';
+}
+
+fn utf8_character() -> utf8_char {
+	return u8'é';
+}
+
+fn unicode_character() -> uchar {
+	return u'😀';
+}
+```
+
+The checker makes sure each returned value matches the declared character type. Then the C and JavaScript backends preserve the decoded value when one function calls another.
+
+I added a complete example that calls all three functions, stores their results, and compares them with the expected literals. It is a small program, but it proves that the feature travels through the whole pipeline instead of stopping at the lexer.
+
 ## What went wrong
 
 The hardest part was not the parser. It was the validation rules.
@@ -64,8 +88,8 @@ I also had to make sure the code did not accidentally treat a UTF-8 or UTF-16 ch
 
 ## What is next?
 
-The next step is to let these character types participate in declarations and function signatures so they are not limited to literal expressions. Once `char`, `utf8_char`, and `uchar` can appear in variable and return types, I can start building the rest of the text story around them.
+The next big decision is what a real Meghan string should look like in memory and how both C and JavaScript should represent it. A single character can live as a decoded numeric value, but a string needs storage, a length, an encoding, and clear ownership rules.
 
-That should lead naturally into the next big decision: what a real Meghan string should look like in memory and how both C and JavaScript should represent it. For now, though, I have a much more solid foundation. ASCII, UTF-8, and UTF-16 character literals are all recognized, validated, checked, and generated with real semantics behind them.
+For now, though, I have a much more solid foundation. ASCII, UTF-8, and UTF-16 character literals can move through variables and function calls, and all three character types can be returned from a function with real semantics behind them.
 
 Thank you for joining me for this part of the journey. I will see you very soon!
