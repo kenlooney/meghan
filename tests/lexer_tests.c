@@ -19,5 +19,15 @@ int main(void)
     EXPECT(lexer_next(&lexer).kind == TOKEN_EOF);
     EXPECT(lexer.errors == 0);
     source_destroy(&source);
+
+    EXPECT(source_from_string(&source, "types.meg", "u8 u16 u32 u64"));
+    lexer_init(&lexer, &source, sink);
+    EXPECT(lexer_next(&lexer).kind == TOKEN_U8);
+    EXPECT(lexer_next(&lexer).kind == TOKEN_U16);
+    EXPECT(lexer_next(&lexer).kind == TOKEN_U32);
+    EXPECT(lexer_next(&lexer).kind == TOKEN_U64);
+    EXPECT(lexer_next(&lexer).kind == TOKEN_EOF);
+    EXPECT(lexer.errors == 0);
+    source_destroy(&source);
     return RESULT();
 }
