@@ -186,10 +186,30 @@ static Expr *parse_primary(Parser *parser)
         advance(parser);
         if (parser->current.kind == TOKEN_LPAREN)
         {
+            Argument *arguments = NULL;
+            Argument **tail = &arguments;
             advance(parser);
+            while (parser->current.kind != TOKEN_RPAREN &&
+                   parser->current.kind != TOKEN_EOF)
+            {
+                Argument *argument = allocate(sizeof *argument);
+                argument->value = parse_expression(parser, 1);
+                *tail = argument;
+                tail = &argument->next;
+                if (parser->current.kind != TOKEN_COMMA)
+                    break;
+                advance(parser);
+                if (parser->current.kind == TOKEN_RPAREN)
+                {
+                    error_at(parser, parser->current.span,
+                             "expected argument after ','");
+                    break;
+                }
+            }
             end = expect(parser, TOKEN_RPAREN, "expected ')' after function name");
             expr = new_expr(EXPR_CALL, joined(token.span, end.span));
             expr->as.call.name = token.span;
+            expr->as.call.arguments = arguments;
             return expr;
         }
         expr = new_expr(EXPR_NAME, token.span);
@@ -406,8 +426,38 @@ ParseResult parse_source(const Source *source, DiagnosticSink diagnostics)
         Token name = expect(&parser, TOKEN_IDENTIFIER, "expected function name");
         Token return_type;
         Function *function = allocate(sizeof *function);
+        Parameter **parameter_tail = &function->parameters;
         function->name = name.span;
         expect(&parser, TOKEN_LPAREN, "expected '('");
+        while (parser.current.kind != TOKEN_RPAREN &&
+               parser.current.kind != TOKEN_EOF)
+        {
+            Token parameter_name = expect(&parser, TOKEN_IDENTIFIER,
+                                          "expected parameter name");
+            Token parameter_type;
+            Parameter *parameter = allocate(sizeof *parameter);
+            parameter->name = parameter_name.span;
+            expect(&parser, TOKEN_COLON, "expected ':' after parameter name");
+            if (parser.current.kind == TOKEN_STAR || parser.current.kind == TOKEN_REF)
+            {
+                parameter->type_modifier = parser.current.kind;
+                advance(&parser);
+            }
+            parameter_type = parse_type_name(&parser);
+            parameter->type_name = parameter_type.span;
+            parameter->span = joined(parameter_name.span, parameter_type.span);
+            *parameter_tail = parameter;
+            parameter_tail = &parameter->next;
+            if (parser.current.kind != TOKEN_COMMA)
+                break;
+            advance(&parser);
+            if (parser.current.kind == TOKEN_RPAREN)
+            {
+                error_at(&parser, parser.current.span,
+                         "expected parameter after ','");
+                break;
+            }
+        }
         expect(&parser, TOKEN_RPAREN, "expected ')'");
         expect(&parser, TOKEN_ARROW, "expected '->'");
         return_type = parse_type_name(&parser);

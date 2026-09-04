@@ -1,0 +1,16 @@
+fn main() -> i64 {
+	let value: i64 = 40;
+	let pointer: *i64 = &value;
+	let first: i64 = increment(pointer);
+	let second: i64 = add(first, value);
+	return second;
+}
+
+fn increment(value: *i64) -> i64 {
+	*value = *value + 1;
+	return *value;
+}
+
+fn add(left: i64, right: i64) -> i64 {
+	return left + right;
+}

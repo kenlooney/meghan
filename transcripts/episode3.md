@@ -102,10 +102,67 @@ The new functions do not have parameters yet. Calls currently take no arguments,
 
 That boundary is useful. I now have multiple named functions and calls, but I can still see exactly what the next function milestone needs to add: parameter declarations, argument checking, parameter scopes, and target-language calling conventions.
 
+## How do values move between functions?
+
+I did not have to wait long to answer that question. The next feature adds function parameters and call arguments to **meg**.
+
+A function can now declare typed parameters, and a call can provide matching arguments:
+
+```meg
+fn main() -> i64 {
+	let value: i64 = 40;
+	let pointer: *i64 = &value;
+	let first: i64 = increment(pointer);
+	let second: i64 = add(first, value);
+	return second;
+}
+
+fn increment(value: *i64) -> i64 {
+	*value = *value + 1;
+	return *value;
+}
+
+fn add(left: i64, right: i64) -> i64 {
+	return left + right;
+}
+```
+
+This example connects the new feature with the pointer work from episode 2. `increment` receives a pointer, changes the value through that pointer, and returns the updated value. `add` receives two ordinary integer values. The language can now move both values and typed addresses across a function boundary.
+
+## What does the compiler check now?
+
+Parameters become symbols in the function's own scope. That means the function body can use a parameter like any other checked name, while duplicate parameter names are rejected instead of silently shadowing one another.
+
+The checker compares each argument with the corresponding parameter. The types must match exactly, including the underlying value type and whether a parameter is a value, pointer, or reference. A call with too few or too many arguments is rejected, as is a call that passes an `i64` where a `bool` or an `*i64` is expected.
+
+The checker also keeps the earlier rule that `main` cannot declare parameters. The entry function still has to match the compiler's current program-start contract.
+
+This makes function calls a proper semantic boundary. Parsing can build a list of parameters and arguments, but only checking can decide whether the two lists have compatible lengths, types, and scopes.
+
+## How do the backends lower parameters?
+
+The C generator emits typed parameters using the same fixed-width and pointer forms already used for local variables. A call becomes a C call with its generated arguments in order.
+
+JavaScript receives generated function parameters and arguments as well. Its existing `BigInt` normalization continues to apply to integer values, while pointer and reference arguments retain the behavior provided by the JavaScript reference representation.
+
+The AST and AST printer now preserve parameter declarations and call argument lists too. That gives me a way to inspect not only the function body, but also the values crossing its boundary before either backend emits target code.
+
+## How did I test the new boundary?
+
+The new `parameter_tests` test checks parsing parameter lists and argument lists, parameter symbols, AST printing, and C and JavaScript generation. It also checks the failures I expect the checker to catch: wrong argument counts, mismatched argument types, duplicate parameter names, and parameters on `main`.
+
+The example uses an `i8` function as well as `i64`, pointer, and reference parameters. That matters because parameter support has to preserve the same type rules across all of the language features that already exist.
+
+This is another satisfying compiler boundary. The parser builds the lists, the checker connects each argument to its parameter, and the generators lower the checked relationship into their own calling syntax.
+
+## What is still missing?
+
+Functions can now receive values, pointers, and references, but the language still does not have variadic calls, default arguments, function pointers, or a broader calling-convention system. The entry function remains parameterless, and the current memory model is still limited to typed local values and references.
+
 ## What is next?
 
 For now, this is a strong new step for **meg**. The compiler can take a source file with several functions, resolve calls even when declarations come later, preserve boolean and fixed-width integer return types, and generate C or JavaScript from the checked program.
 
-The next time I extend this part of the language, I want to explore parameters and arguments. There is still plenty to learn about how names and values move between functions, but **meg** is no longer confined to a single block of code.
+Now **meg** can also carry typed values across function boundaries. There is still plenty to learn about calling conventions and memory, but functions are no longer isolated blocks that can only return a result. They can receive the data they need to do their work.
 
 Thank you for joining me for this next part of the journey. Take care, and I will see you very soon!

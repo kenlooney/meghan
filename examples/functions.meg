@@ -1,11 +1,7 @@
 fn main() -> i64 {
-	return forty() + two();
+	return add(40, 2);
 }
 
-fn forty() -> i64 {
-	return 40;
-}
-
-fn two() -> i64 {
-	return 2;
+fn add(left: i64, right: i64) -> i64 {
+	return left + right;
 }

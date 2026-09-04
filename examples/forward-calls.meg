@@ -1,11 +1,11 @@
 fn main() -> i64 {
-	return answer();
+	return answer(40);
 }
 
-fn answer() -> i64 {
-	return base() + 2;
+fn answer(base: i64) -> i64 {
+	return add_two(base);
 }
 
-fn base() -> i64 {
-	return 40;
+fn add_two(value: i64) -> i64 {
+	return value + 2;
 }
