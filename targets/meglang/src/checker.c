@@ -237,6 +237,15 @@ static bool is_lvalue(const Expr *expr)
                     (expr->kind == EXPR_UNARY && expr->as.unary.op == TOKEN_STAR));
 }
 
+static bool is_integer_literal_expr(const Expr *expr)
+{
+    return expr &&
+           (expr->kind == EXPR_INT ||
+            (expr->kind == EXPR_UNARY &&
+             expr->as.unary.op == TOKEN_MINUS &&
+             expr->as.unary.operand->kind == EXPR_INT));
+}
+
 static Type check_expr(Checker *checker, Expr *expr, Type expected, bool allow_assignment)
 {
     Type left, right;
@@ -381,8 +390,19 @@ static Type check_expr(Checker *checker, Expr *expr, Type expected, bool allow_a
         case TOKEN_STAR:
         case TOKEN_SLASH:
         case TOKEN_PERCENT:
-            left = check_expr(checker, expr->as.binary.left, expected, false);
-            right = check_expr(checker, expr->as.binary.right, expected, false);
+            if (!is_integer_type(expected) &&
+                is_integer_literal_expr(expr->as.binary.left) &&
+                !is_integer_literal_expr(expr->as.binary.right))
+            {
+                right = check_expr(checker, expr->as.binary.right, error_type(), false);
+                left = check_expr(checker, expr->as.binary.left, right, false);
+            }
+            else
+            {
+                left = check_expr(checker, expr->as.binary.left, expected, false);
+                right = check_expr(checker, expr->as.binary.right,
+                                   is_integer_type(expected) ? expected : left, false);
+            }
             if (is_error(left) || is_error(right))
                 return expr->type = error_type();
             if (!is_integer_type(left) || !is_integer_type(right))
@@ -400,8 +420,17 @@ static Type check_expr(Checker *checker, Expr *expr, Type expected, bool allow_a
         case TOKEN_LESS_EQUAL:
         case TOKEN_GREATER:
         case TOKEN_GREATER_EQUAL:
-            left = check_expr(checker, expr->as.binary.left, error_type(), false);
-            right = check_expr(checker, expr->as.binary.right, left, false);
+            if (is_integer_literal_expr(expr->as.binary.left) &&
+                !is_integer_literal_expr(expr->as.binary.right))
+            {
+                right = check_expr(checker, expr->as.binary.right, error_type(), false);
+                left = check_expr(checker, expr->as.binary.left, right, false);
+            }
+            else
+            {
+                left = check_expr(checker, expr->as.binary.left, error_type(), false);
+                right = check_expr(checker, expr->as.binary.right, left, false);
+            }
             if (is_error(left) || is_error(right))
                 return expr->type = error_type();
             if (!is_integer_type(left) || !same_type(left, right))
@@ -412,8 +441,17 @@ static Type check_expr(Checker *checker, Expr *expr, Type expected, bool allow_a
             return expr->type = value_type(TYPE_BOOL);
         case TOKEN_EQUAL:
         case TOKEN_NOT_EQUAL:
-            left = check_expr(checker, expr->as.binary.left, error_type(), false);
-            right = check_expr(checker, expr->as.binary.right, left, false);
+            if (is_integer_literal_expr(expr->as.binary.left) &&
+                !is_integer_literal_expr(expr->as.binary.right))
+            {
+                right = check_expr(checker, expr->as.binary.right, error_type(), false);
+                left = check_expr(checker, expr->as.binary.left, right, false);
+            }
+            else
+            {
+                left = check_expr(checker, expr->as.binary.left, error_type(), false);
+                right = check_expr(checker, expr->as.binary.right, left, false);
+            }
             if (is_error(left) || is_error(right))
                 return expr->type = error_type();
             if (!same_type(left, right))
