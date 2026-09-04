@@ -23,6 +23,30 @@ int main(void)
     program_destroy(result.program);
     source_destroy(&source);
 
+    EXPECT(source_from_string(&source, "strings.meg",
+                              "fn main() -> i64 { return \"hello\" + 1; }"));
+    result = parse_source(&source, sink);
+    EXPECT(result.errors == 0);
+    checker_init(&checker, sink);
+    EXPECT(!checker_check(&checker, result.program));
+    EXPECT(checker.errors == 1);
+    EXPECT(result.program->functions->body->as.block.items->as.expression->type.value == TYPE_ERROR);
+    checker_destroy(&checker);
+    program_destroy(result.program);
+    source_destroy(&source);
+
+    EXPECT(source_from_string(&source, "utf16-string.meg",
+                              "fn main() -> i64 { return u\"hello\"; }"));
+    result = parse_source(&source, sink);
+    EXPECT(result.errors == 0);
+    checker_init(&checker, sink);
+    EXPECT(!checker_check(&checker, result.program));
+    EXPECT(checker.errors == 1);
+    EXPECT(result.program->functions->body->as.block.items->as.expression->type.value == TYPE_USTRING);
+    checker_destroy(&checker);
+    program_destroy(result.program);
+    source_destroy(&source);
+
     EXPECT(source_from_string(&source, "bad.meg", "fn main() -> i64 { return missing; }"));
     result = parse_source(&source, sink);
     EXPECT(result.errors == 0);

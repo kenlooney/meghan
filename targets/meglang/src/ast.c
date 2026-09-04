@@ -128,6 +128,8 @@ static bool print_expr(FILE *out, const Expr *expr)
         return put(out, expr->as.boolean ? "true" : "false");
     case EXPR_NAME:
         return span_write(out, expr->as.name);
+    case EXPR_STRING:
+        return span_write(out, expr->as.string.literal);
     case EXPR_CALL:
     {
         const Argument *argument;
