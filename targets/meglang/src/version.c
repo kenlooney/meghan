@@ -2,5 +2,5 @@
 
 int meg_version(void)
 {
-    return 3;
+    return 6;
 }

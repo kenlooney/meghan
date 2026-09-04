@@ -74,6 +74,13 @@ static unsigned integer_bits(ValueType type)
 
 static bool emit_expr(JsEmitter *emitter, const Expr *expr);
 
+static bool emit_function_name(JsEmitter *emitter, const FunctionSymbol *function)
+{
+    if (span_equals(function->name, "main"))
+        return emit(emitter, "meg_main");
+    return emit(emitter, "meg_f_%u", function->id);
+}
+
 static bool emit_integer_conversion_start(JsEmitter *emitter, Type type)
 {
     if (type.form != TYPE_VALUE) return true;
@@ -118,6 +125,8 @@ static bool emit_expr(JsEmitter *emitter, const Expr *expr)
     case EXPR_INT: return emit(emitter, "%llun", (unsigned long long)expr->as.integer);
     case EXPR_BOOL: return emit(emitter, "%s", expr->as.boolean ? "true" : "false");
     case EXPR_NAME: return emit(emitter, "meg_v_%u", expr->symbol->id);
+    case EXPR_CALL:
+        return emit_function_name(emitter, expr->as.call.symbol) && emit(emitter, "()");
     case EXPR_UNARY:
         if (expr->as.unary.op == TOKEN_AMPERSAND || expr->as.unary.op == TOKEN_REF)
             return emit_reference(emitter, expr->as.unary.operand);
@@ -238,7 +247,8 @@ static bool emit_statements(JsEmitter *emitter, const Statement *statement, unsi
 
 bool codegen_js(FILE *out, const Program *program, DiagnosticSink diagnostics)
 {
-    JsEmitter emitter = {out, diagnostics, program ? program->function.return_type : TYPE_ERROR, false};
+    JsEmitter emitter = {out, diagnostics, TYPE_ERROR, false};
+    const Function *function;
     if (!out || !program) return false;
     if (!emit(&emitter,
         "\"use strict\";\n\n"
@@ -261,9 +271,15 @@ bool codegen_js(FILE *out, const Program *program, DiagnosticSink diagnostics)
         "    return a / b;\n}\n"
         "function meg_rem_unsigned(a, b) {\n"
         "    if (b === 0n) throw new RangeError(\"invalid unsigned remainder\");\n"
-        "    return a %% b;\n}\n\n"
-        "function meg_main() ")) return false;
-    if (!emit_block(&emitter, program->function.body, 0)) return false;
+        "    return a %% b;\n}\n\n")) return false;
+    for (function = program->functions; function; function = function->next) {
+        emitter.return_type = function->return_type;
+        if (!emit(&emitter, "function ") ||
+            !emit_function_name(&emitter, function->symbol) ||
+            !emit(&emitter, "() ") ||
+            !emit_block(&emitter, function->body, 0) ||
+            !emit(&emitter, "\n\n")) return false;
+    }
     if (!emit(&emitter, "\n\nprocess.exitCode = Number(meg_main());\n")) return false;
     return !emitter.failed && !ferror(out);
 }

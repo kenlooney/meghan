@@ -1,0 +1,15 @@
+fn main() -> i64 {
+	if is_ready() {
+		return answer();
+	} else {
+		return 0;
+	}
+}
+
+fn is_ready() -> bool {
+	return true;
+}
+
+fn answer() -> i64 {
+	return 42;
+}

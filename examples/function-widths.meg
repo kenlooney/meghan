@@ -1,0 +1,64 @@
+fn main() -> u64 {
+	let a: i8 = signed8();
+	let b: i16 = signed16();
+	let c: i32 = signed32();
+	let d: i64 = signed64();
+	let e: u8 = unsigned8();
+	let f: u16 = unsigned16();
+	let g: u32 = unsigned32();
+	let h: u64 = unsigned64();
+	if a != 8 {
+		return 1;
+	}
+	if b != 16 {
+		return 1;
+	}
+	if c != 32 {
+		return 1;
+	}
+	if d != 64 {
+		return 1;
+	}
+	if e != 8 {
+		return 1;
+	}
+	if f != 16 {
+		return 1;
+	}
+	if g != 32 {
+		return 1;
+	}
+	return h;
+}
+
+fn signed8() -> i8 {
+	return 8;
+}
+
+fn signed16() -> i16 {
+	return 16;
+}
+
+fn signed32() -> i32 {
+	return 32;
+}
+
+fn signed64() -> i64 {
+	return 64;
+}
+
+fn unsigned8() -> u8 {
+	return 8;
+}
+
+fn unsigned16() -> u16 {
+	return 16;
+}
+
+fn unsigned32() -> u32 {
+	return 32;
+}
+
+fn unsigned64() -> u64 {
+	return 64;
+}
