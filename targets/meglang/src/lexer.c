@@ -61,6 +61,8 @@ static const char *const token_names[TOKEN_KIND_COUNT] = {
     [TOKEN_ARROW] = "->",
     [TOKEN_REF] = "ref",
     [TOKEN_AMPERSAND] = "&",
+    [TOKEN_STRING] = "string",
+    [TOKEN_USTRING] = "UTF-16 string",
 };
 
 const char *token_name(TokenKind kind)
@@ -225,6 +227,112 @@ static int digit_value(char c)
     return -1;
 }
 
+static Token scan_string(Lexer *lexer, size_t start,
+                         unsigned line, unsigned column)
+{
+    const unsigned char *text = (const unsigned char *)lexer->source->text;
+    const size_t length = lexer->source->length;
+    size_t current = start;
+    TokenKind kind = TOKEN_STRING;
+    bool ascii = true;
+    bool invalid = false;
+
+    if (text[current] == 'u')
+    {
+        if (current + 1 < length && text[current + 1] == '8')
+        {
+            ascii = false;
+            current += 2;
+        }
+        else
+        {
+            ascii = false;
+            kind = TOKEN_USTRING;
+            ++current;
+        }
+    }
+    ++current; /* opening quote */
+
+    while (current < length)
+    {
+        unsigned char c = text[current];
+        size_t width;
+
+        if (c == '"')
+        {
+            ++current;
+            lexer->column += (unsigned)(current - lexer->current);
+            lexer->current = current;
+            if (invalid)
+            {
+                Token token = make_token(lexer, TOKEN_ERROR, start, line, column);
+                report(lexer, token.span, ascii
+                       ? "non-ASCII character in ASCII string literal"
+                       : "invalid UTF-8 in string literal");
+                return token;
+            }
+            return make_token(lexer, kind, start, line, column);
+        }
+        if (c == '\n' || c == '\r' || c == '\0')
+            break;
+        if (c == '\\')
+        {
+            ++current;
+            if (current >= length || text[current] == '\n' ||
+                text[current] == '\r' || text[current] == '\0')
+                break;
+            ++current;
+            continue;
+        }
+        if (c < 0x80)
+        {
+            ++current;
+            continue;
+        }
+        if (ascii)
+        {
+            invalid = true;
+            ++current;
+            continue;
+        }
+
+        if (c >= 0xc2 && c <= 0xdf)
+            width = 2;
+        else if (c >= 0xe0 && c <= 0xef)
+            width = 3;
+        else if (c >= 0xf0 && c <= 0xf4)
+            width = 4;
+        else
+        {
+            invalid = true;
+            ++current;
+            continue;
+        }
+        if (current + width > length ||
+            (text[current + 1] & 0xc0) != 0x80 ||
+            (width > 2 && (text[current + 2] & 0xc0) != 0x80) ||
+            (width > 3 && (text[current + 3] & 0xc0) != 0x80 ||
+             (width == 3 && c == 0xe0 && text[current + 1] < 0xa0) ||
+             (width == 3 && c == 0xed && text[current + 1] >= 0xa0) ||
+             (width == 4 && c == 0xf0 && text[current + 1] < 0x90) ||
+             (width == 4 && c == 0xf4 && text[current + 1] >= 0x90)))
+        {
+            invalid = true;
+            ++current;
+            continue;
+        }
+        current += width;
+    }
+
+    lexer->column += (unsigned)(current - lexer->current);
+    lexer->current = current;
+    {
+        Token token = make_token(lexer, TOKEN_ERROR, start, line, column);
+        report(lexer, token.span, "unterminated string literal");
+        return token;
+    }
+}
+
 static Token scan_number(Lexer *lexer, size_t start,
                          unsigned line, unsigned column)
 {
@@ -292,6 +400,11 @@ Token lexer_next(Lexer *lexer)
     c = peek(lexer);
     if (!c)
         return make_token(lexer, TOKEN_EOF, start, line, column);
+    if (c == '"' ||
+        (c == 'u' && (peek_next(lexer) == '"' ||
+         (peek_next(lexer) == '8' && lexer->current + 2 < lexer->source->length &&
+          lexer->source->text[lexer->current + 2] == '"'))))
+        return scan_string(lexer, start, line, column);
     if (identifier_start(c))
     {
         Token token;

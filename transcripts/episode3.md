@@ -159,6 +159,36 @@ This is another satisfying compiler boundary. The parser builds the lists, the c
 
 Functions can now receive values, pointers, and references, but the language still does not have variadic calls, default arguments, function pointers, or a broader calling-convention system. The entry function remains parameterless, and the current memory model is still limited to typed local values and references.
 
+## Can **meg** recognize text now?
+
+After making function calls more expressive, I started laying the groundwork for text. The lexer now recognizes string literal tokens, including ordinary ASCII strings, UTF-8-prefixed strings, and UTF-16-prefixed strings.
+
+Here are the forms the lexer can distinguish:
+
+```meg
+"plain ASCII"
+u8"caf\u00e9"
+u"snowman: \u2603"
+```
+
+The `u8` prefix identifies a UTF-8 string, while `u` identifies the UTF-16 string form. At this stage these are token-level features. The parser, semantic checker, and code generators do not yet turn them into a Meghan string value or target-language data structure.
+
+## What does the lexer validate?
+
+The lexer handles escaped quotes so a quote can appear inside a string without ending it. It also stops and reports an error for an unterminated string rather than letting the rest of the source be swallowed as part of the literal.
+
+An unprefixed string is restricted to ASCII. Non-ASCII text must use the UTF-8 form, and the UTF-8 scanner validates the byte sequence instead of accepting arbitrary high-bit bytes. Invalid sequences such as an incorrect leading byte or malformed continuation bytes produce a lexer error.
+
+This is a small feature on the surface, but encoding makes the source format more precise. A string is not just a collection of characters; the compiler needs to know which representation the programmer intended and whether the source bytes are valid for it.
+
+## How did I test the text groundwork?
+
+I expanded the lexer tests with plain strings, UTF-8 text containing a non-ASCII character, a UTF-16-prefixed string, and an escaped quote. The tests check the token kinds and source spans as well as the absence of lexer errors for valid input.
+
+The negative cases cover a non-ASCII character in an ordinary string, malformed UTF-8 in a UTF-8 string, and an unterminated string. Each one produces an error token and increments the lexer error count, while the lexer still reaches the end of the source afterward.
+
+The token definitions also reserve character and UTF-16 character kinds for the language as this work grows. Those tokens are not yet produced by the current string scanner, so there is still a clear next step before text and characters can travel through the full compiler pipeline.
+
 ## What is next?
 
 For now, this is a strong new step for **meg**. The compiler can take a source file with several functions, resolve calls even when declarations come later, preserve boolean and fixed-width integer return types, and generate C or JavaScript from the checked program.
