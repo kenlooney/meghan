@@ -22,5 +22,6 @@ add_meg_test(pipeline_tests)
 add_meg_test(for_loops)
 add_meg_test(freestanding_tests)
 add_meg_test(pointer_tests)
+add_meg_test(function_tests)
 add_test(NAME cli_help COMMAND meg --help)
 

@@ -14,7 +14,7 @@ int main(void)
     EXPECT(result.errors == 0);
     checker_init(&checker, sink);
     EXPECT(checker_check(&checker, result.program));
-    EXPECT(result.program->function.body->as.block.items->as.let.symbol != NULL);
+    EXPECT(result.program->functions->body->as.block.items->as.let.symbol != NULL);
     checker_destroy(&checker);
     program_destroy(result.program);
     source_destroy(&source);

@@ -6,6 +6,7 @@ typedef struct Emitter
 {
     FILE *out;
     DiagnosticSink diagnostics;
+    bool freestanding;
     bool failed;
 } Emitter;
 
@@ -74,6 +75,13 @@ static bool emit_c_type(Emitter *emitter, Type type)
                 type.form == TYPE_VALUE ? "" : " *");
 }
 
+static bool emit_function_name(Emitter *emitter, const FunctionSymbol *function)
+{
+    if (span_equals(function->name, "main"))
+        return emit(emitter, "%s", emitter->freestanding ? "meg_entry" : "meg_main");
+    return emit(emitter, "meg_f_%u", function->id);
+}
+
 static bool emit_expr(Emitter *emitter, const Expr *expr)
 {
     const char *operator_text;
@@ -86,6 +94,8 @@ static bool emit_expr(Emitter *emitter, const Expr *expr)
         return emit(emitter, "%s", expr->as.boolean ? "true" : "false");
     case EXPR_NAME:
         return emit(emitter, "meg_v_%u", expr->symbol->id);
+    case EXPR_CALL:
+        return emit_function_name(emitter, expr->as.call.symbol) && emit(emitter, "()");
     case EXPR_UNARY:
         if (expr->as.unary.op == TOKEN_MINUS &&
             expr->as.unary.operand->kind == EXPR_INT &&
@@ -193,7 +203,8 @@ static bool emit_statements(Emitter *emitter, const Statement *statement, unsign
 
 static bool codegen_c_impl(FILE *out, const Program *program, DiagnosticSink diagnostics, bool freestanding)
 {
-    Emitter emitter = {out, diagnostics, false};
+    Emitter emitter = {out, diagnostics, freestanding, false};
+    const Function *function;
     const char *trap = freestanding ? "meg_trap()" : "abort()";
     if (!out || !program)
         return false;
@@ -226,15 +237,32 @@ static bool codegen_c_impl(FILE *out, const Program *program, DiagnosticSink dia
               trap, trap, trap, trap))
         return false;
 
-    if (!emit(&emitter, freestanding ? "%s meg_entry(void) " : "static %s meg_main(void) ",
-              c_type(program->function.return_type)))
+    for (function = program->functions; function; function = function->next)
+    {
+        if ((!span_equals(function->name, "main") || !freestanding) &&
+            !emit(&emitter, "static "))
+            return false;
+        if (!emit(&emitter, "%s ", c_type(function->return_type)) ||
+            !emit_function_name(&emitter, function->symbol) ||
+            !emit(&emitter, "(void);\n"))
+            return false;
+    }
+    if (!emit(&emitter, "\n"))
         return false;
-    if (!emit_block(&emitter, program->function.body, 0))
-        return false;
+    for (function = program->functions; function; function = function->next)
+    {
+        if ((!span_equals(function->name, "main") || !freestanding) &&
+            !emit(&emitter, "static "))
+            return false;
+        if (!emit(&emitter, "%s ", c_type(function->return_type)) ||
+            !emit_function_name(&emitter, function->symbol) ||
+            !emit(&emitter, "(void) ") ||
+            !emit_block(&emitter, function->body, 0) ||
+            !emit(&emitter, "\n\n"))
+            return false;
+    }
     if (!freestanding &&
-        !emit(&emitter, "\n\nint main(void) { return (int)meg_main(); }\n"))
-        return false;
-    if (freestanding && !emit(&emitter, "\n"))
+        !emit(&emitter, "int main(void) { return (int)meg_main(); }\n"))
         return false;
     return !emitter.failed && !ferror(out);
 }

@@ -44,6 +44,7 @@ typedef struct Type { ValueType value; TypeForm form; } Type;
 
 
 typedef struct Symbol Symbol;
+typedef struct FunctionSymbol FunctionSymbol;
 typedef struct Expr Expr;
 typedef struct Statement Statement;
 
@@ -52,7 +53,8 @@ typedef enum ExprKind {
     EXPR_BOOL,
     EXPR_NAME,
     EXPR_UNARY,
-    EXPR_BINARY
+    EXPR_BINARY,
+    EXPR_CALL
 } ExprKind;
 
 struct Expr {
@@ -64,6 +66,7 @@ struct Expr {
         uint64_t integer;
         bool boolean;
         SourceSpan name;
+        struct { SourceSpan name; const FunctionSymbol *symbol; } call;
         struct {TokenKind op; Expr *operand;} unary;
         struct {TokenKind op; Expr *left; Expr *right;} binary;
     } as;
@@ -110,12 +113,14 @@ typedef struct Function {
     SourceSpan name;
     SourceSpan return_type_name;
     ValueType return_type;
+    const FunctionSymbol *symbol;
     Statement *body;
+    struct Function *next;
 } Function;
 
 typedef struct Program {
     const Source *source;
-    Function function;
+    Function *functions;
 } Program;
 
 void program_destroy(Program *program);

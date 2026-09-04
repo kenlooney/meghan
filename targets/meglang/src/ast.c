@@ -74,9 +74,17 @@ static void statements_destroy(Statement *statement)
 
 void program_destroy(Program *program)
 {
+    Function *function;
     if (!program)
         return;
-    statements_destroy(program->function.body);
+    function = program->functions;
+    while (function)
+    {
+        Function *next = function->next;
+        statements_destroy(function->body);
+        free(function);
+        function = next;
+    }
     free(program);
 }
 
@@ -91,11 +99,18 @@ static bool indent(FILE *out, unsigned depth)
 
 static bool print_expr(FILE *out, const Expr *expr)
 {
-    if (!expr) return put(out, "<error>");
-    switch (expr->kind) {
-    case EXPR_INT: return fprintf(out, "%lld", (long long)expr->as.integer) >= 0;
-    case EXPR_BOOL: return put(out, expr->as.boolean ? "true" : "false");
-    case EXPR_NAME: return span_write(out, expr->as.name);
+    if (!expr)
+        return put(out, "<error>");
+    switch (expr->kind)
+    {
+    case EXPR_INT:
+        return fprintf(out, "%lld", (long long)expr->as.integer) >= 0;
+    case EXPR_BOOL:
+        return put(out, expr->as.boolean ? "true" : "false");
+    case EXPR_NAME:
+        return span_write(out, expr->as.name);
+    case EXPR_CALL:
+        return span_write(out, expr->as.call.name) && put(out, "()");
     case EXPR_UNARY:
         return put(out, "(") && put(out, token_name(expr->as.unary.op)) &&
                (expr->as.unary.op != TOKEN_REF || put(out, " ")) &&
@@ -110,9 +125,12 @@ static bool print_expr(FILE *out, const Expr *expr)
 
 static bool print_statements(FILE *out, const Statement *statement, unsigned depth)
 {
-   for (; statement; statement = statement->next) {
-        if (!indent(out, depth)) return false;
-        switch (statement->kind) {
+    for (; statement; statement = statement->next)
+    {
+        if (!indent(out, depth))
+            return false;
+        switch (statement->kind)
+        {
         case STMT_LET:
             if (!put(out, "let ") || !span_write(out, statement->as.let.name) ||
                 !put(out, ": ") ||
@@ -121,27 +139,34 @@ static bool print_statements(FILE *out, const Statement *statement, unsigned dep
                   (statement->as.let.type_modifier == TOKEN_REF && !put(out, " ")))) ||
                 !span_write(out, statement->as.let.type_name) ||
                 !put(out, " = ") || !print_expr(out, statement->as.let.value) ||
-                !put(out, "\n")) return false;
+                !put(out, "\n"))
+                return false;
             break;
         case STMT_RETURN:
-            if (!put(out, "return ") || !print_expr(out, statement->as.expression) || !put(out, "\n")) return false;
+            if (!put(out, "return ") || !print_expr(out, statement->as.expression) || !put(out, "\n"))
+                return false;
             break;
         case STMT_EXPR:
-            if (!print_expr(out, statement->as.expression) || !put(out, "\n")) return false;
+            if (!print_expr(out, statement->as.expression) || !put(out, "\n"))
+                return false;
             break;
         case STMT_BLOCK:
-            if (!put(out, "block\n") || !print_statements(out, statement->as.block.items, depth + 1)) return false;
+            if (!put(out, "block\n") || !print_statements(out, statement->as.block.items, depth + 1))
+                return false;
             break;
         case STMT_IF:
             if (!put(out, "if ") || !print_expr(out, statement->as.branch.condition) || !put(out, "\n") ||
-                !print_statements(out, statement->as.branch.then_branch, depth + 1)) return false;
+                !print_statements(out, statement->as.branch.then_branch, depth + 1))
+                return false;
             if (statement->as.branch.else_branch &&
                 (!indent(out, depth) || !put(out, "else\n") ||
-                 !print_statements(out, statement->as.branch.else_branch, depth + 1))) return false;
+                 !print_statements(out, statement->as.branch.else_branch, depth + 1)))
+                return false;
             break;
         case STMT_WHILE:
             if (!put(out, "while ") || !print_expr(out, statement->as.loop.condition) || !put(out, "\n") ||
-                !print_statements(out, statement->as.loop.body, depth + 1)) return false;
+                !print_statements(out, statement->as.loop.body, depth + 1))
+                return false;
             break;
         case STMT_FOR:
             if (!put(out, "for\n") ||
@@ -150,7 +175,8 @@ static bool print_statements(FILE *out, const Statement *statement, unsigned dep
                 !print_expr(out, statement->as.iteration.condition) || !put(out, "\n") ||
                 !indent(out, depth + 1) || !put(out, "step ") ||
                 !print_expr(out, statement->as.iteration.step) || !put(out, "\n") ||
-                !print_statements(out, statement->as.iteration.body, depth + 1)) return false;
+                !print_statements(out, statement->as.iteration.body, depth + 1))
+                return false;
             break;
         }
     }
@@ -159,6 +185,15 @@ static bool print_statements(FILE *out, const Statement *statement, unsigned dep
 
 bool ast_print(FILE *out, const Program *program)
 {
-    return out && program && put(out, "function main\n") &&
-           print_statements(out, program->function.body, 1);
+    const Function *function;
+    if (!out || !program)
+        return false;
+    for (function = program->functions; function; function = function->next)
+    {
+        if (!put(out, "function ") || !span_write(out, function->name) ||
+            !put(out, " -> ") || !span_write(out, function->return_type_name) ||
+            !put(out, "\n") || !print_statements(out, function->body, 1))
+            return false;
+    }
+    return true;
 }

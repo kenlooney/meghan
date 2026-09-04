@@ -14,9 +14,9 @@ int main(void)
     result = parse_source(&source, sink);
     EXPECT(result.errors == 0);
     EXPECT(result.program != NULL);
-    EXPECT(result.program->function.body->kind == STMT_BLOCK);
-    EXPECT(result.program->function.body->as.block.items->kind == STMT_RETURN);
-    EXPECT(result.program->function.body->as.block.items->as.expression->kind == EXPR_BINARY);
+    EXPECT(result.program->functions->body->kind == STMT_BLOCK);
+    EXPECT(result.program->functions->body->as.block.items->kind == STMT_RETURN);
+    EXPECT(result.program->functions->body->as.block.items->as.expression->kind == EXPR_BINARY);
     program_destroy(result.program);
     source_destroy(&source);
 
@@ -26,7 +26,7 @@ int main(void)
         "let c: i32 = 3; let d: i64 = 4; return a; }"));
     result = parse_source(&source, sink);
     EXPECT(result.errors == 0);
-    EXPECT(span_equals(result.program->function.return_type_name, "i8"));
+    EXPECT(span_equals(result.program->functions->return_type_name, "i8"));
     program_destroy(result.program);
     source_destroy(&source);
 
@@ -36,7 +36,7 @@ int main(void)
         "let c: u32 = 3; let d: u64 = 4; return d; }"));
     result = parse_source(&source, sink);
     EXPECT(result.errors == 0);
-    EXPECT(span_equals(result.program->function.return_type_name, "u64"));
+    EXPECT(span_equals(result.program->functions->return_type_name, "u64"));
     program_destroy(result.program);
     source_destroy(&source);
 
