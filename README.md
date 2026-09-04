@@ -24,6 +24,8 @@ AST representation.
   whitespace, and comments.
 - Decimal, hexadecimal (`0x`), and binary (`0b`) integer literals.
 - Line comments (`//`) and block comments (`/* ... */`).
+- Lexing ASCII, UTF-8-prefixed (`u8`) and UTF-16-prefixed (`u`) string
+	literals, including escaped quotes and UTF-8 validation.
 - Parsing multiple functions with typed parameters, blocks, declarations,
 	returns, conditionals, `while` and `for` loops, expressions, and calls.
 - An AST for functions, parameters, call arguments, integer and boolean values,
@@ -131,6 +133,27 @@ slice, or nested-pointer types needed to expose that interface.
 
 See [`examples/parameters.meg`](examples/parameters.meg) for value and pointer
 parameters used in a complete program.
+
+## String Literals
+
+The lexer recognizes three string forms:
+
+```meg
+"plain ASCII"
+u8"caf\u00e9"
+u"snowman: \u2603"
+```
+
+An unprefixed string is restricted to ASCII. The `u8` prefix identifies a
+UTF-8 string, and the `u` prefix identifies a UTF-16 string. The lexer accepts
+escaped quotes and validates the UTF-8 byte sequence in prefixed strings.
+Malformed UTF-8, non-ASCII bytes in an unprefixed string, and unterminated
+strings produce diagnostics and error tokens.
+
+String literals are currently recognized at the lexer level only. They are not
+yet represented in the AST, checked by the semantic analyzer, or emitted by
+the C and JavaScript generators. Character and UTF-16 character token kinds are
+reserved for future language work but are not emitted by the current scanner.
 
 ## Quick Start
 
@@ -398,7 +421,8 @@ The test suite currently includes:
 - `smoke`: verifies the basic build and library connection.
 - `source_tests`: checks source ownership, spans, comparisons, and cleanup.
 - `lexer_tests`: checks keywords, identifiers, integers, comments, operators,
-	positions, integer type keywords, and end-of-file handling.
+	positions, integer type keywords, string literals, UTF-8 validation, and
+	end-of-file handling.
 - `ast_tests`: checks AST construction, printing, and cleanup.
 - `parser_tests`: checks function, statement, and expression parsing.
 - `checker_tests`: checks valid programs, symbol resolution, integer literal

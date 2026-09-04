@@ -30,5 +30,47 @@ int main(void)
     EXPECT(lexer_next(&lexer).kind == TOKEN_EOF);
     EXPECT(lexer.errors == 0);
     source_destroy(&source);
+
+    EXPECT(source_from_string(&source, "strings.meg",
+                              "\"plain\" u8\"caf\xc3\xa9\" "
+                              "u\"snowman: \xe2\x98\x83\" "
+                              "\"escaped \\\" quote\""));
+    lexer_init(&lexer, &source, sink);
+    token = lexer_next(&lexer);
+    EXPECT(token.kind == TOKEN_STRING);
+    EXPECT(span_equals(token.span, "\"plain\""));
+    token = lexer_next(&lexer);
+    EXPECT(token.kind == TOKEN_STRING);
+    EXPECT(span_equals(token.span, "u8\"caf\xc3\xa9\""));
+    token = lexer_next(&lexer);
+    EXPECT(token.kind == TOKEN_USTRING);
+    EXPECT(span_equals(token.span, "u\"snowman: \xe2\x98\x83\""));
+    token = lexer_next(&lexer);
+    EXPECT(token.kind == TOKEN_STRING);
+    EXPECT(span_equals(token.span, "\"escaped \\\" quote\""));
+    EXPECT(lexer_next(&lexer).kind == TOKEN_EOF);
+    EXPECT(lexer.errors == 0);
+    source_destroy(&source);
+
+    EXPECT(source_from_string(&source, "non-ascii.meg", "\"\xc3\xa9\""));
+    lexer_init(&lexer, &source, sink);
+    EXPECT(lexer_next(&lexer).kind == TOKEN_ERROR);
+    EXPECT(lexer_next(&lexer).kind == TOKEN_EOF);
+    EXPECT(lexer.errors == 1);
+    source_destroy(&source);
+
+    EXPECT(source_from_string(&source, "invalid-utf8.meg", "u8\"\xc0\xaf\""));
+    lexer_init(&lexer, &source, sink);
+    EXPECT(lexer_next(&lexer).kind == TOKEN_ERROR);
+    EXPECT(lexer_next(&lexer).kind == TOKEN_EOF);
+    EXPECT(lexer.errors == 1);
+    source_destroy(&source);
+
+    EXPECT(source_from_string(&source, "unterminated.meg", "\"open"));
+    lexer_init(&lexer, &source, sink);
+    EXPECT(lexer_next(&lexer).kind == TOKEN_ERROR);
+    EXPECT(lexer_next(&lexer).kind == TOKEN_EOF);
+    EXPECT(lexer.errors == 1);
+    source_destroy(&source);
     return RESULT();
 }
