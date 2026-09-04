@@ -24,5 +24,6 @@ add_meg_test(freestanding_tests)
 add_meg_test(pointer_tests)
 add_meg_test(function_tests)
 add_meg_test(parameter_tests)
+add_meg_test(character_tests)
 add_test(NAME cli_help COMMAND meg --help)
 

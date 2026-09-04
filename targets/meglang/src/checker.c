@@ -65,6 +65,12 @@ const char *value_type_name(ValueType type)
         return "string";
     case TYPE_USTRING:
         return "ustring";
+    case TYPE_CHAR:
+        return "char";
+    case TYPE_UTF8_CHAR:
+        return "utf8_char";
+    case TYPE_UCHAR:
+        return "uchar";
     default:
         return "<error>";
     }
@@ -173,6 +179,14 @@ static ValueType written_type(SourceSpan span)
         return TYPE_U64;
     if (span_equals(span, "bool"))
         return TYPE_BOOL;
+    if (span_equals(span, "string"))
+        return TYPE_STRING;
+    if (span_equals(span, "char"))
+        return TYPE_CHAR;
+    if (span_equals(span, "utf8_char"))
+        return TYPE_UTF8_CHAR;
+    if (span_equals(span, "uchar"))
+        return TYPE_UCHAR;
     return TYPE_ERROR;
 }
 
@@ -192,6 +206,15 @@ static bool is_integer_type(Type type)
 {
     return type.form == TYPE_VALUE &&
            (is_signed_integer_value(type.value) || is_unsigned_integer_value(type.value));
+}
+static bool is_character_type(Type type)
+{
+    return type.form == TYPE_VALUE &&
+           (type.value == TYPE_CHAR || type.value == TYPE_UTF8_CHAR || type.value == TYPE_UCHAR);
+}
+static bool is_string_type(Type type)
+{
+    return type.form == TYPE_VALUE && type.value == TYPE_STRING;
 }
 
 static bool integer_fits_type(uint64_t value, ValueType type)
@@ -259,7 +282,12 @@ static Type check_expr(Checker *checker, Expr *expr, Type expected, bool allow_a
         return error_type();
     switch (expr->kind)
     {
-    
+    case EXPR_CHAR:
+        return expr->type = value_type(TYPE_CHAR);
+    case EXPR_UTF8_CHAR:
+        return expr->type = value_type(TYPE_UTF8_CHAR);
+    case EXPR_UCHAR:
+        return expr->type = value_type(TYPE_UCHAR);
     case EXPR_STRING:
     return expr->type = value_type(
         expr->as.string.encoding == STRING_UTF16

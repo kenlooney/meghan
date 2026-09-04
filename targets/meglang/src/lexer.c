@@ -62,7 +62,10 @@ static const char *const token_names[TOKEN_KIND_COUNT] = {
     [TOKEN_REF] = "ref",
     [TOKEN_AMPERSAND] = "&",
     [TOKEN_STRING] = "string",
+    [TOKEN_CHAR] = "character",
+    [TOKEN_UTF8_CHAR] = "UTF-8 character",
     [TOKEN_USTRING] = "UTF-16 string",
+    [TOKEN_UCHAR] = "UTF-16 character",
 };
 
 const char *token_name(TokenKind kind)
@@ -225,6 +228,127 @@ static int digit_value(char c)
     if (c >= 'A' && c <= 'F')
         return c - 'A' + 10;
     return -1;
+}
+
+static Token scan_char(Lexer *lexer, size_t start,
+                       unsigned line, unsigned column)
+{
+    const unsigned char *text = (const unsigned char *)lexer->source->text;
+    const size_t length = lexer->source->length;
+    size_t current = start;
+    TokenKind kind = TOKEN_CHAR;
+    bool ascii = true;
+    const char *error = NULL;
+
+    if (text[current] == 'u')
+    {
+        ascii = false;
+        if (current + 1 < length && text[current + 1] == '8')
+        {
+            kind = TOKEN_UTF8_CHAR;
+            current += 2;
+        }
+        else
+        {
+            kind = TOKEN_UCHAR;
+            ++current;
+        }
+    }
+    ++current; /* opening quote */
+
+    if (current >= length || text[current] == '\n' ||
+        text[current] == '\r' || text[current] == '\0')
+    {
+        error = "unterminated character literal";
+    }
+    else if (text[current] == '\\')
+    {
+        ++current;
+        if (current >= length || text[current] == '\n' ||
+            text[current] == '\r' || text[current] == '\0')
+            error = "unterminated character literal";
+        else
+            ++current;
+    }
+    else if (text[current] < 0x80)
+    {
+        if (text[current] == '\'')
+            error = "character literal must contain exactly one character";
+        else
+            ++current;
+    }
+    else if (ascii)
+    {
+        ++current;
+        error = "non-ASCII character in ASCII character literal";
+    }
+    else
+    {
+        const unsigned char lead = text[current];
+        size_t width;
+
+        if (lead >= 0xc2 && lead <= 0xdf)
+            width = 2;
+        else if (lead >= 0xe0 && lead <= 0xef)
+            width = 3;
+        else if (lead >= 0xf0 && lead <= 0xf4)
+            width = 4;
+        else
+            width = 0;
+
+        if (!width || current + width > length ||
+            (text[current + 1] & 0xc0) != 0x80 ||
+            (width > 2 && (text[current + 2] & 0xc0) != 0x80) ||
+            (width > 3 && (text[current + 3] & 0xc0) != 0x80) ||
+            (width == 3 && lead == 0xe0 && text[current + 1] < 0xa0) ||
+            (width == 3 && lead == 0xed && text[current + 1] >= 0xa0) ||
+            (width == 4 && lead == 0xf0 && text[current + 1] < 0x90) ||
+            (width == 4 && lead == 0xf4 && text[current + 1] >= 0x90))
+        {
+            ++current;
+            error = "invalid UTF-8 in character literal";
+        }
+        else
+        {
+            current += width;
+        }
+    }
+
+    if (error)
+    {
+        while (current < length && text[current] != '\'' &&
+               text[current] != '\n' && text[current] != '\r' &&
+               text[current] != '\0')
+            ++current;
+        if (current < length && text[current] == '\'')
+            ++current;
+    }
+    else if (current < length && text[current] == '\'')
+        ++current;
+    else
+    {
+        while (current < length && text[current] != '\'' &&
+               text[current] != '\n' && text[current] != '\r' &&
+               text[current] != '\0')
+            ++current;
+        if (current < length && text[current] == '\'')
+        {
+            ++current;
+            error = "character literal must contain exactly one character";
+        }
+        else
+            error = "unterminated character literal";
+    }
+
+    lexer->column += (unsigned)(current - lexer->current);
+    lexer->current = current;
+    if (error)
+    {
+        Token token = make_token(lexer, TOKEN_ERROR, start, line, column);
+        report(lexer, token.span, error);
+        return token;
+    }
+    return make_token(lexer, kind, start, line, column);
 }
 
 static Token scan_string(Lexer *lexer, size_t start,
@@ -401,10 +525,15 @@ Token lexer_next(Lexer *lexer)
     if (!c)
         return make_token(lexer, TOKEN_EOF, start, line, column);
     if (c == '"' ||
-        (c == 'u' && (peek_next(lexer) == '"' ||
-         (peek_next(lexer) == '8' && lexer->current + 2 < lexer->source->length &&
+         (c == 'u' && (peek_next(lexer) == '"' ||
+          (peek_next(lexer) == '8' && lexer->current + 2 < lexer->source->length &&
           lexer->source->text[lexer->current + 2] == '"'))))
         return scan_string(lexer, start, line, column);
+    if (c == '\'' ||
+        (c == 'u' && (peek_next(lexer) == '\'' ||
+         (peek_next(lexer) == '8' && lexer->current + 2 < lexer->source->length &&
+          lexer->source->text[lexer->current + 2] == '\''))))
+        return scan_char(lexer, start, line, column);
     if (identifier_start(c))
     {
         Token token;
