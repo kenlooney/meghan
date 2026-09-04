@@ -32,7 +32,9 @@ typedef enum ValueType{
     TYPE_U16,
     TYPE_U32,
     TYPE_U64,
-    TYPE_BOOL
+    TYPE_BOOL,
+    TYPE_STRING,
+    TYPE_USTRING,
 } ValueType;
 typedef enum TypeForm {
     TYPE_VALUE,
@@ -41,6 +43,13 @@ typedef enum TypeForm {
 } TypeForm;
 
 typedef struct Type { ValueType value; TypeForm form; } Type;
+
+
+typedef enum StringEncoding {
+    STRING_ASCII,
+    STRING_UTF8,
+    STRING_UTF16
+} StringEncoding;
 
 
 typedef struct Symbol Symbol;
@@ -72,7 +81,8 @@ typedef enum ExprKind {
     EXPR_NAME,
     EXPR_UNARY,
     EXPR_BINARY,
-    EXPR_CALL
+    EXPR_CALL,
+    EXPR_STRING,
 } ExprKind;
 
 struct Expr {
@@ -84,6 +94,10 @@ struct Expr {
         uint64_t integer;
         bool boolean;
         SourceSpan name;
+        struct {
+              StringEncoding encoding;
+              SourceSpan literal;
+        } string;
         struct {
             SourceSpan name;
             const FunctionSymbol *symbol;

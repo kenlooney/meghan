@@ -163,6 +163,14 @@ static Expr *parse_primary(Parser *parser)
 {
     Token token = parser->current;
     Expr *expr;
+    if (token.kind == TOKEN_STRING || token.kind == TOKEN_USTRING)
+    {
+        expr = new_expr(EXPR_STRING, token.span);
+        expr->as.string.encoding = token.kind == TOKEN_STRING ? STRING_UTF8 : STRING_UTF16;
+        expr->as.string.literal = token.span;
+        advance(parser);
+        return expr;
+    }
     if (token.kind == TOKEN_INTEGER)
     {
         uint64_t value = 0;
