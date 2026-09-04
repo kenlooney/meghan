@@ -46,7 +46,7 @@ int main(void)
     EXPECT(parsed.errors == 0);
     checker_init(&checker, sink);
     EXPECT(checker_check(&checker, parsed.program));
-    first = parsed.program->function.body->as.block.items;
+    first = parsed.program->functions->body->as.block.items;
     EXPECT(first->next->as.let.type.value == TYPE_I8);
     EXPECT(first->next->as.let.type.form == TYPE_POINTER);
     EXPECT(first->next->next->as.let.type.value == TYPE_I8);

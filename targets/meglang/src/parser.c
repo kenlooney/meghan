@@ -182,7 +182,16 @@ static Expr *parse_primary(Parser *parser)
     }
     if (token.kind == TOKEN_IDENTIFIER)
     {
+        Token end;
         advance(parser);
+        if (parser->current.kind == TOKEN_LPAREN)
+        {
+            advance(parser);
+            end = expect(parser, TOKEN_RPAREN, "expected ')' after function name");
+            expr = new_expr(EXPR_CALL, joined(token.span, end.span));
+            expr->as.call.name = token.span;
+            return expr;
+        }
         expr = new_expr(EXPR_NAME, token.span);
         expr->as.name = token.span;
         return expr;
@@ -207,7 +216,8 @@ static Expr *parse_prefix(Parser *parser)
     Token token = parser->current;
     if (token.kind == TOKEN_MINUS || token.kind == TOKEN_BANG ||
         token.kind == TOKEN_STAR || token.kind == TOKEN_AMPERSAND ||
-        token.kind == TOKEN_REF) {
+        token.kind == TOKEN_REF)
+    {
         Expr *expr;
         Expr *operand;
         advance(parser);
@@ -289,7 +299,8 @@ static Statement *parse_statement(Parser *parser)
         statement = new_statement(STMT_LET, start.span);
         name = expect(parser, TOKEN_IDENTIFIER, "expected variable name");
         expect(parser, TOKEN_COLON, "expected ':' after variable name");
-        if (parser->current.kind == TOKEN_STAR || parser->current.kind == TOKEN_REF) {
+        if (parser->current.kind == TOKEN_STAR || parser->current.kind == TOKEN_REF)
+        {
             statement->as.let.type_modifier = parser->current.kind;
             advance(parser);
         }
@@ -381,7 +392,7 @@ ParseResult parse_source(const Source *source, DiagnosticSink diagnostics)
 {
     Parser parser;
     Program *program = allocate(sizeof *program);
-    Token name, return_type;
+    Function **tail = &program->functions;
     lexer_init(&parser.lexer, source, diagnostics);
     parser.current = (Token){0};
     parser.previous = (Token){0};
@@ -389,20 +400,23 @@ ParseResult parse_source(const Source *source, DiagnosticSink diagnostics)
     parser.errors = 0;
     program->source = source;
     advance(&parser);
-    expect(&parser, TOKEN_FN, "expected 'fn'");
-    name = expect(&parser, TOKEN_IDENTIFIER, "expected function name");
-    program->function.name = name.span;
-    expect(&parser, TOKEN_LPAREN, "expected '('");
-    expect(&parser, TOKEN_RPAREN, "expected ')'");
-    expect(&parser, TOKEN_ARROW, "expected '->'");
-    return_type = parse_type_name(&parser);
-    program->function.return_type_name = return_type.span;
-    program->function.body = parse_block(&parser);
-    program->function.span = joined(name.span, program->function.body->span);
-    if (parser.current.kind != TOKEN_EOF)
-        error_at(&parser, parser.current.span, "expected end of file");
-    if (!span_equals(name.span, "main"))
-        error_at(&parser, name.span, "Meg 0.1 function must be named 'main'");
+    while (parser.current.kind != TOKEN_EOF)
+    {
+        Token start = expect(&parser, TOKEN_FN, "expected 'fn'");
+        Token name = expect(&parser, TOKEN_IDENTIFIER, "expected function name");
+        Token return_type;
+        Function *function = allocate(sizeof *function);
+        function->name = name.span;
+        expect(&parser, TOKEN_LPAREN, "expected '('");
+        expect(&parser, TOKEN_RPAREN, "expected ')'");
+        expect(&parser, TOKEN_ARROW, "expected '->'");
+        return_type = parse_type_name(&parser);
+        function->return_type_name = return_type.span;
+        function->body = parse_block(&parser);
+        function->span = joined(start.span, function->body->span);
+        *tail = function;
+        tail = &function->next;
+    }
     {
         ParseResult result = {program, parser.errors + parser.lexer.errors};
         return result;

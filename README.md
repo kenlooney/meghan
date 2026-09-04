@@ -24,8 +24,8 @@ AST representation.
   whitespace, and comments.
 - Decimal, hexadecimal (`0x`), and binary (`0b`) integer literals.
 - Line comments (`//`) and block comments (`/* ... */`).
-- Parsing `main` functions with blocks, declarations, returns, conditionals,
-  `while` and `for` loops, and expressions.
+- Parsing multiple functions with blocks, declarations, returns, conditionals,
+	`while` and `for` loops, expressions, and no-argument calls.
 - An AST for integer and boolean values, names, unary and binary expressions,
   and the supported statement forms.
 - Semantic checking for `i8`, `i16`, `i32`, `i64`, `u8`, `u16`, `u32`,
@@ -35,6 +35,8 @@ AST representation.
 	statements.
 - Freestanding-compatible C output with a `meg_entry` entry point and an
 	external `meg_panic` trap hook.
+- Function symbol resolution, forward calls, boolean return types, and
+	return types for all supported signed and unsigned integer widths.
 - Automated tests for each pipeline stage, including code generation.
 
 ## Pointers and References
@@ -88,6 +90,41 @@ The current source-generation pipeline is:
 Hosted C or freestanding-compatible C can then be passed to a C toolchain, and
 JavaScript can be passed to Node.js or another JavaScript runtime. Native
 Meghan backends remain a long-term goal.
+
+## Functions and Calls
+
+Meghan programs can contain multiple no-argument functions. Each function has
+its own return type and body, and a function can call another function even if
+that function is declared later in the source:
+
+```meg
+fn main() -> i64 {
+	return answer();
+}
+
+fn answer() -> i64 {
+	return forty() + 2;
+}
+
+fn forty() -> i64 {
+	return 40;
+}
+```
+
+The semantic checker collects function declarations before checking their
+bodies. It resolves calls, rejects unknown or duplicate functions, and checks
+that a call's return type is valid wherever the call is used. Boolean-returning
+functions can be used as conditions, and function return types preserve all
+supported signed and unsigned integer widths.
+
+The C generator emits internal names such as `meg_main` and `meg_f_1`, while
+the JavaScript generator emits corresponding generated functions. Hosted C
+still receives a normal `main` wrapper, and freestanding-compatible C retains
+its platform-facing entry-point contract.
+
+Function parameters and arguments are not supported yet. Calls currently take
+no arguments, so the next function milestone will need parameter scopes,
+argument type checking, and target-language calling conventions.
 
 ## Quick Start
 
@@ -368,6 +405,8 @@ The test suite currently includes:
 	generation without hosted runtime dependencies.
 - `pointer_tests`: checks pointer and reference typing, dereferencing,
 	assignment, and C and JavaScript generation.
+- `function_tests`: checks multiple functions, forward calls, return types,
+	unknown-function errors, and C and JavaScript generation.
 - `cli_help`: verifies the command-line help path.
 
 ## Developer Guide
@@ -392,9 +431,10 @@ freestanding-compatible C exposes `meg_entry` and an external `meg_panic` hook.
 Both C modes use internal symbol IDs for generated variable names and helper
 functions that reject invalid signed division or remainder. Future work
 includes invoking target-language compilers, adding platform startup code, and
-building native backends. Pointer and reference support currently operates on
-typed local values; future memory work must preserve source-span, type, symbol,
-and diagnostic information as the model grows.
+building native backends. Functions currently have no parameters or arguments,
+and pointer and reference support operates on typed local values. Future work
+must preserve source-span, type, symbol, and diagnostic information as these
+models grow.
 
 ## License
 

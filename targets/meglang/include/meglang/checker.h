@@ -27,14 +27,22 @@ struct Symbol {
     struct Symbol *next_in_scope;
     struct Symbol *next_allocated;
 };
+struct FunctionSymbol {
+    SourceSpan name;
+    Type return_type;
+    unsigned id;
+    struct FunctionSymbol *next;
+};
 
 typedef struct Scope Scope;
 typedef struct Checker {
     DiagnosticSink diagnostics;
     Scope *scope;
     Symbol *allocated;
+    FunctionSymbol *functions;
     ValueType return_type;
     unsigned next_id;
+    unsigned next_function_id;
     unsigned errors;
 } Checker;
 
